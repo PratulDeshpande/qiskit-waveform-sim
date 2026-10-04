@@ -3,7 +3,6 @@ Test configuration and fixtures for qiskit-waveform-sim.
 """
 
 import pytest
-import numpy as np
 from qiskit import QuantumCircuit
 from qiskit.providers.fake_provider import GenericBackendV2
 from qiskit.transpiler import generate_preset_pass_manager
@@ -28,7 +27,7 @@ def simple_circuit(backend_2q):
     qc.h(0)
     qc.cx(0, 1)
     qc.measure([0, 1], [0, 1])
-    
+
     pm = generate_preset_pass_manager(
         optimization_level=1, backend=backend_2q, scheduling_method="alap"
     )
@@ -39,20 +38,22 @@ def simple_circuit(backend_2q):
 def circuit_with_boxop(backend_2q):
     """Circuit with BoxOp and custom annotation for testing (NOT scheduled - scheduling doesn't support BoxOp)."""
     from qiskit_waveform_sim import PulseEnvelopeAnnotation
-    
+
     qc = QuantumCircuit(2, 2)
     qc.h(0)
     qc.cx(0, 1)
-    
+
     with qc.box(
         duration=160,
         unit="dt",
-        annotations=[PulseEnvelopeAnnotation(shape="drag", amp=0.55, beta=0.25, sigma_ratio=0.2)]
+        annotations=[
+            PulseEnvelopeAnnotation(shape="drag", amp=0.55, beta=0.25, sigma_ratio=0.2)
+        ],
     ):
         qc.sx(0)
-    
+
     qc.measure([0, 1], [0, 1])
-    
+
     # Don't schedule - BoxOp not supported with scheduling_method
     return qc
 
@@ -69,7 +70,7 @@ def fractional_gate_circuit(backend_2q):
     qc.h(0)
     qc.cx(0, 1)
     qc.measure([0, 1], [0, 1])
-    
+
     pm = generate_preset_pass_manager(
         optimization_level=1, backend=backend_2q, scheduling_method="alap"
     )
@@ -80,4 +81,5 @@ def fractional_gate_circuit(backend_2q):
 def compiled_simulator(simple_circuit, backend_2q):
     """Pre-compiled TargetWaveformSimulator."""
     from qiskit_waveform_sim import TargetWaveformSimulator
+
     return TargetWaveformSimulator(backend_2q.target).compile(simple_circuit)

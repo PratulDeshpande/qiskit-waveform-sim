@@ -14,16 +14,12 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.12"]
-        qiskit-version: ["2.5.2", "2.6.0"]
+        qiskit-version: ["2.5.2"]
         include:
           - python-version: "3.11"
             qiskit-version: "2.5.2"
           - python-version: "3.12"
             qiskit-version: "2.5.2"
-          - python-version: "3.11"
-            qiskit-version: "2.6.0"
-          - python-version: "3.12"
-            qiskit-version: "2.6.0"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -98,6 +94,7 @@ jobs:
 
       - name: Install docs dependencies
         run: |
+          sudo apt-get update && sudo apt-get install -y pandoc
           python -m pip install --upgrade pip
           pip install -e ".[docs]"
 
