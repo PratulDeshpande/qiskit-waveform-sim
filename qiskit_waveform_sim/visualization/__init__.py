@@ -187,7 +187,9 @@ def create_pulse_sheet(
     # Update layout
     fig.update_layout(
         title={
-            "text": "Qiskit Waveform Simulator - Pulse Sheet", "x": 0.5, "font": {"size": 16}
+            "text": "Qiskit Waveform Simulator - Pulse Sheet",
+            "x": 0.5,
+            "font": {"size": 16},
         },
         height=max(n_channels * config.height_per_channel, 400),
         showlegend=False,
@@ -374,13 +376,21 @@ def create_iq_oscilloscope(
 
     fig.update_layout(
         title={
-            "text": f"I/Q Oscilloscope - Channel: {channel}", "x": 0.5, "font": {"size": 14}
+            "text": f"I/Q Oscilloscope - Channel: {channel}",
+            "x": 0.5,
+            "font": {"size": 14},
         },
         height=600 if show_phase else 450,
         showlegend=True,
         template="plotly_white",
         hovermode="x unified",
-        legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "right", "x": 1},
+        legend={
+            "orientation": "h",
+            "yanchor": "bottom",
+            "y": 1.02,
+            "xanchor": "right",
+            "x": 1,
+        },
         margin={"l": 80, "r": 50, "t": 80, "b": 50},
     )
 
@@ -606,7 +616,8 @@ def create_combined_view(
 
     fig.update_layout(
         title={
-            "text": f"Combined View: Pulse Sheet + I/Q Oscilloscope ({channel})", "x": 0.5
+            "text": f"Combined View: Pulse Sheet + I/Q Oscilloscope ({channel})",
+            "x": 0.5,
         },
         height=max(total_rows * 50, 800),
         showlegend=True,

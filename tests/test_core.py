@@ -334,5 +334,3 @@ class TestTargetWaveformSimulator:
         assert isinstance(qasm3_str, str)
         assert len(qasm3_str) > 0
         assert "OPENQASM 3" in qasm3_str
-
-

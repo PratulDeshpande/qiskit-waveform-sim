@@ -242,7 +242,9 @@ class TargetWaveformSimulator:
         self.events_by_channel.clear()
         max_stop_dt = 0
 
-        for inst, start_dt in zip(scheduled_qc.data, scheduled_qc.op_start_times, strict=False):
+        for inst, start_dt in zip(
+            scheduled_qc.data, scheduled_qc.op_start_times, strict=False
+        ):
             op = inst.operation
             q_indices = tuple(scheduled_qc.find_bit(q).index for q in inst.qubits)
             max_stop_dt = max(
@@ -391,7 +393,8 @@ class TargetWaveformSimulator:
         ):
             warnings.warn(
                 f"Unknown operation '{op.name}' on qubits {q_indices}, using fallback duration of 160 dt",
-                UserWarning, stacklevel=2,
+                UserWarning,
+                stacklevel=2,
             )
         return 160  # Fallback basis duration in dt
 
@@ -663,7 +666,8 @@ class TargetWaveformSimulator:
 
                 warnings.warn(
                     f"Unknown pulse shape '{ev.shape}' on channel {channel}, skipping",
-                    UserWarning, stacklevel=2,
+                    UserWarning,
+                    stacklevel=2,
                 )
                 continue
 
