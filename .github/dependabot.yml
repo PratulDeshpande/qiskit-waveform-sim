@@ -1,0 +1,66 @@
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "pip"
+    commit-message:
+      prefix: "deps(pip):"
+      include: "scope"
+    groups:
+      qiskit:
+        patterns:
+          - "qiskit*"
+        update-types:
+          - "minor"
+          - "patch"
+      dev-deps:
+        patterns:
+          - "pytest*"
+          - "ruff*"
+          - "black*"
+          - "mypy*"
+          - "pre-commit*"
+          - "sphinx*"
+          - "nbsphinx*"
+          - "myst-parser*"
+        update-types:
+          - "minor"
+          - "patch"
+      docs-deps:
+        patterns:
+          - "sphinx*"
+          - "nbsphinx*"
+          - "myst-parser*"
+          - "sphinx-rtd-theme*"
+        update-types:
+          - "minor"
+          - "patch"
+      export-deps:
+        patterns:
+          - "kaleido*"
+          - "h5py*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "deps(github-actions):"

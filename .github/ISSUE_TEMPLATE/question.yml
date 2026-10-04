@@ -1,0 +1,52 @@
+---
+name: Question / Discussion
+description: Ask a question or start a discussion
+title: "[Question]: "
+labels: ["question", "discussion"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have a question about qiskit-waveform-sim? Ask away!
+  - type: textarea
+    id: question
+    attributes:
+      label: Your Question
+      description: What would you like to know?
+      placeholder: How do I... / Why does... / What is the best way to...
+    validations:
+      required: true
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category
+      options:
+        - Installation / Setup
+        - Basic Usage
+        - Custom Annotations / BoxOp
+        - Visualization (Plotly / Matplotlib)
+        - Hardware Export (LabOne Q / RFSoC / CSV)
+        - QPY / OpenQASM 3 Serialization
+        - Performance / Large Circuits
+        - Virtual-Z Frame Tracking
+        - DRAG / GaussianSquare Envelopes
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Package Version
+      placeholder: "0.1.0"
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Any code snippets, error messages, or context that might help
+      render: python
+      placeholder: |
+        # Paste relevant code here
+    validations:
+      required: false
