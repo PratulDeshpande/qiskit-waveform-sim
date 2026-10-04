@@ -138,7 +138,9 @@ class TestPulseAnnotationSerializer:
     def test_load_valid(self):
         """Test deserialization from OpenQASM 3 pragma."""
         serializer = PulseAnnotationSerializer()
-        payload = "{'shape': 'drag', 'amp': 0.55, 'beta': 0.2, 'sigma_ratio': 0.2, 'risefall_dt': 20}"
+        payload = (
+            "{'shape': 'drag', 'amp': 0.55, 'beta': 0.2, 'sigma_ratio': 0.2, 'risefall_dt': 20}"
+        )
 
         ann = serializer.load("pulse_sim.envelope", payload)
 
@@ -229,13 +231,9 @@ class TestAnnotationIntegration:
 
         serializer = PulseAnnotationSerializer()
         buf = io.BytesIO()
-        qpy.dump(
-            qc, buf, annotation_factories={"pulse_sim.envelope": serializer.as_qpy()}
-        )
+        qpy.dump(qc, buf, annotation_factories={"pulse_sim.envelope": serializer.as_qpy()})
         buf.seek(0)
-        loaded = qpy.load(
-            buf, annotation_factories={"pulse_sim.envelope": serializer.as_qpy()}
-        )[0]
+        loaded = qpy.load(buf, annotation_factories={"pulse_sim.envelope": serializer.as_qpy()})[0]
 
         # Check annotation survived
         for inst in loaded.data:

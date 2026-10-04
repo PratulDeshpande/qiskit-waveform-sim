@@ -152,9 +152,7 @@ class TestTargetWaveformSimulator:
         assert "d0" in sim.events_by_channel
         # d1 may not have events if no gates on qubit 1
         # Check that at least drive channels or control channels exist
-        assert any(
-            ch.startswith("d") or ch.startswith("u") for ch in sim.events_by_channel
-        )
+        assert any(ch.startswith("d") or ch.startswith("u") for ch in sim.events_by_channel)
 
     def test_compile_requires_scheduling(self, backend_2q):
         """Test that compilation fails without scheduling."""
@@ -188,9 +186,7 @@ class TestTargetWaveformSimulator:
 
     def test_get_snippet_empty_channel(self, compiled_simulator):
         """Test snippet for channel with no events."""
-        snippet = compiled_simulator.get_snippet(
-            "nonexistent", start_dt=0, length_dt=100
-        )
+        snippet = compiled_simulator.get_snippet("nonexistent", start_dt=0, length_dt=100)
 
         assert len(snippet.wave) == 100
         assert np.all(snippet.wave == 0)
@@ -308,9 +304,7 @@ class TestTargetWaveformSimulator:
         from qiskit_waveform_sim import TargetWaveformSimulator
 
         if_freq = 50e6  # 50 MHz
-        sim = TargetWaveformSimulator(backend_2q.target, if_freq_hz=if_freq).compile(
-            simple_circuit
-        )
+        sim = TargetWaveformSimulator(backend_2q.target, if_freq_hz=if_freq).compile(simple_circuit)
 
         snippet = sim.get_snippet("d0", start_dt=0, length_dt=1000)
 

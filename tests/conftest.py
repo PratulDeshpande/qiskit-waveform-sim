@@ -46,9 +46,7 @@ def circuit_with_boxop(backend_2q):
     with qc.box(
         duration=160,
         unit="dt",
-        annotations=[
-            PulseEnvelopeAnnotation(shape="drag", amp=0.55, beta=0.25, sigma_ratio=0.2)
-        ],
+        annotations=[PulseEnvelopeAnnotation(shape="drag", amp=0.55, beta=0.25, sigma_ratio=0.2)],
     ):
         qc.sx(0)
 

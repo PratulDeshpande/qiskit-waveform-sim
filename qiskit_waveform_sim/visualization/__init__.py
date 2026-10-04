@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-
 import numpy as np
 import plotly.graph_objects as go
 import plotly.io as pio
@@ -64,9 +63,7 @@ def create_pulse_sheet(
 
     if not channels:
         fig = go.Figure()
-        fig.add_annotation(
-            text="No events to display", xref="paper", yref="paper", x=0.5, y=0.5
-        )
+        fig.add_annotation(text="No events to display", xref="paper", yref="paper", x=0.5, y=0.5)
         return fig
 
     # Limit channels if too many
@@ -626,9 +623,7 @@ def create_combined_view(
         margin={"l": 100, "r": 50, "t": 80, "b": 50},
     )
 
-    fig.update_xaxes(
-        title_text="Time (ns)", row=total_rows, col=1, range=[t_start_ns, t_stop_ns]
-    )
+    fig.update_xaxes(title_text="Time (ns)", row=total_rows, col=1, range=[t_start_ns, t_stop_ns])
     for i in range(1, n_channels + 1):
         fig.update_yaxes(visible=False, row=i, col=1)
 
