@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to publish (e.g., 0.1.0)'
+        description: "Version to publish (e.g., 0.1.1)"
         required: true
         type: string
 
@@ -63,5 +63,9 @@ jobs:
 
       - name: Verify installation
         run: |
-          pip install qiskit-waveform-sim==${{ github.event.release.tag_name || inputs.version }}
+          VERSION="${{ github.event.release.tag_name || inputs.version }}"
+          VERSION="${VERSION#v}"
+          # Wait 30 seconds for PyPI to index the new release
+          sleep 30
+          pip install qiskit-waveform-sim==${VERSION}
           python -c "import qiskit_waveform_sim; print('Version:', qiskit_waveform_sim.__version__); print('✅ Package installs correctly')"
