@@ -1,8 +1,8 @@
 # qiskit-waveform-sim
 
-[![PyPI](https://img.shields.io/pypi/v/qiskit-waveform-sim.svg)](https://pypi.org/project/qiskit-waveform-sim/)
-[![Python](https://img.shields.io/pypi/pyversions/qiskit-waveform-sim.svg)](https://pypi.org/project/qiskit-waveform-sim/)
-[![License](https://img.shields.io/pypi/l/qiskit-waveform-sim.svg)](https://www.apache.org/licenses/LICENSE-2.0)
+[![PyPI](https://img.shields.io/pypi/v/qiskit-waveform-sim.svg?cache=clear)](https://pypi.org/project/qiskit-waveform-sim/)
+[![Python](https://img.shields.io/pypi/pyversions/qiskit-waveform-sim.svg?cache=clear)](https://pypi.org/project/qiskit-waveform-sim/)
+[![License](https://img.shields.io/pypi/l/qiskit-waveform-sim.svg?cache=clear)](https://www.apache.org/licenses/LICENSE-2.0)
 [![Tests](https://github.com/PratulDeshpande/qiskit-waveform-sim/workflows/Tests/badge.svg)](https://github.com/PratulDeshpande/qiskit-waveform-sim/actions)
 
 **Zero-bloat Classical Control Waveform Simulator & Interactive Pulse Sheet Viewer for Qiskit 2.5+**
