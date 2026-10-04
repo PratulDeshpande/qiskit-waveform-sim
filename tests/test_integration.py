@@ -243,7 +243,9 @@ class TestFullWorkflow:
         scheduled = pm.run(qc)
 
         if_freq = 100e6  # 100 MHz
-        sim = TargetWaveformSimulator(backend.target, if_freq_hz=if_freq).compile(scheduled)
+        sim = TargetWaveformSimulator(backend.target, if_freq_hz=if_freq).compile(
+            scheduled
+        )
 
         snippet = sim.get_snippet("d0", start_dt=0, length_dt=500)
 

@@ -143,7 +143,9 @@ def plot_pulse_sheet(
 
             # Virtual Z marker
             if ev.shape == "virtual_z" and show_phase_markers:
-                ax.axvline(ev_start_ns, color="red", linestyle="--", linewidth=1, alpha=0.8)
+                ax.axvline(
+                    ev_start_ns, color="red", linestyle="--", linewidth=1, alpha=0.8
+                )
                 ax.text(
                     ev_start_ns,
                     y_top + 0.02,
@@ -240,10 +242,16 @@ def plot_iq_waveforms(
     axes[0].plot(time_ns, wave.real, label="I (Real)", color="#1f77b4", linewidth=0.8)
     if show_envelope:
         envelope = np.abs(wave)
-        axes[0].plot(time_ns, envelope, color="gray", linewidth=0.5, linestyle="--", alpha=0.5)
-        axes[0].plot(time_ns, -envelope, color="gray", linewidth=0.5, linestyle="--", alpha=0.5)
+        axes[0].plot(
+            time_ns, envelope, color="gray", linewidth=0.5, linestyle="--", alpha=0.5
+        )
+        axes[0].plot(
+            time_ns, -envelope, color="gray", linewidth=0.5, linestyle="--", alpha=0.5
+        )
     axes[0].set_ylabel("Amplitude", fontsize=10)
-    axes[0].set_title(f"Channel: {snippet.channel} - I/Q Waveforms", fontsize=12, fontweight="bold")
+    axes[0].set_title(
+        f"Channel: {snippet.channel} - I/Q Waveforms", fontsize=12, fontweight="bold"
+    )
     axes[0].legend(loc="upper right", fontsize=9)
     axes[0].grid(True, alpha=0.3)
 
@@ -251,15 +259,21 @@ def plot_iq_waveforms(
     axes[1].plot(time_ns, wave.imag, label="Q (Imag)", color="#ff7f0e", linewidth=0.8)
     if show_envelope:
         envelope = np.abs(wave)
-        axes[1].plot(time_ns, envelope, color="gray", linewidth=0.5, linestyle="--", alpha=0.5)
-        axes[1].plot(time_ns, -envelope, color="gray", linewidth=0.5, linestyle="--", alpha=0.5)
+        axes[1].plot(
+            time_ns, envelope, color="gray", linewidth=0.5, linestyle="--", alpha=0.5
+        )
+        axes[1].plot(
+            time_ns, -envelope, color="gray", linewidth=0.5, linestyle="--", alpha=0.5
+        )
     axes[1].set_ylabel("Amplitude", fontsize=10)
     axes[1].legend(loc="upper right", fontsize=9)
     axes[1].grid(True, alpha=0.3)
 
     # Phase
     if show_phase:
-        axes[2].plot(time_ns, phase_rad, label="Frame Phase", color="#d62728", linewidth=0.8)
+        axes[2].plot(
+            time_ns, phase_rad, label="Frame Phase", color="#d62728", linewidth=0.8
+        )
         axes[2].set_ylabel("Phase (rad)", fontsize=10)
         axes[2].set_xlabel("Time (ns)", fontsize=10)
         axes[2].legend(loc="upper right", fontsize=9)
@@ -410,7 +424,9 @@ def plot_phase_tracking(
         times_ns = np.array(times_dt) * sim.dt * 1e9
 
         # Step plot for phase changes
-        ax.step(times_ns, phases, where="post", label=f"Q{q}", color=color, linewidth=1.5)
+        ax.step(
+            times_ns, phases, where="post", label=f"Q{q}", color=color, linewidth=1.5
+        )
         ax.scatter(times_ns, phases, color=color, s=20, zorder=5)
 
     ax.set_xlabel("Time (ns)", fontsize=12)

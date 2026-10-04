@@ -33,7 +33,9 @@ def mock_simulator():
         ChannelEvent("d0", 500, 0, "rz(1.57)", (0,), -1.57, "virtual_z", 0.0j, 0, 0, 0),
     ]
     events_d1 = [
-        ChannelEvent("d1", 400, 160, "sx", (1,), 0.0, "drag", 0.45 + 0j, 0.08, 40.0, 16),
+        ChannelEvent(
+            "d1", 400, 160, "sx", (1,), 0.0, "drag", 0.45 + 0j, 0.08, 40.0, 16
+        ),
     ]
     events_cr = [
         ChannelEvent(
@@ -173,7 +175,9 @@ class TestVisualizationWithMockSimulator:
 
         assert isinstance(fig, go.Figure)
         # Should have subplot titles for 2 channels
-        subplot_titles = [a for a in fig.layout.annotations if a.text and a.text.startswith("<b>")]
+        subplot_titles = [
+            a for a in fig.layout.annotations if a.text and a.text.startswith("<b>")
+        ]
         assert len(subplot_titles) <= 2
 
     def test_create_iq_oscilloscope(self, mock_simulator):
@@ -252,7 +256,9 @@ class TestVisualizationEdgeCases:
     def test_single_channel(self, mock_simulator):
         """Test with single channel."""
         mock_simulator.get_channels.return_value = ["d0"]
-        mock_simulator.events_by_channel = {"d0": mock_simulator.events_by_channel["d0"]}
+        mock_simulator.events_by_channel = {
+            "d0": mock_simulator.events_by_channel["d0"]
+        }
 
         fig = create_pulse_sheet(mock_simulator)
         assert isinstance(fig, go.Figure)
@@ -265,7 +271,9 @@ class TestVisualizationEdgeCases:
         assert isinstance(fig, go.Figure)
         # X-axis should be limited on the last subplot
         # Find the last xaxis
-        xaxis_attrs = [k for k in dir(fig.layout) if k.startswith("xaxis") and k != "xaxis"]
+        xaxis_attrs = [
+            k for k in dir(fig.layout) if k.startswith("xaxis") and k != "xaxis"
+        ]
         if xaxis_attrs:
             last_xaxis = getattr(fig.layout, sorted(xaxis_attrs)[-1])
             # Allow small floating point differences

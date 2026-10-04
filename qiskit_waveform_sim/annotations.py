@@ -75,7 +75,9 @@ class PulseEnvelopeAnnotation(Annotation):
             Rise/fall duration in dt (for gaussian_square shape)
         """
         if shape not in ("drag", "gaussian_square"):
-            raise ValueError(f"Unsupported shape: {shape}. Use 'drag' or 'gaussian_square'")
+            raise ValueError(
+                f"Unsupported shape: {shape}. Use 'drag' or 'gaussian_square'"
+            )
 
         self.shape = shape
         self.amp = float(amp)
@@ -101,7 +103,9 @@ class PulseEnvelopeAnnotation(Annotation):
         )
 
     def __hash__(self) -> int:
-        return hash((self.shape, self.amp, self.beta, self.sigma_ratio, self.risefall_dt))
+        return hash(
+            (self.shape, self.amp, self.beta, self.sigma_ratio, self.risefall_dt)
+        )
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to dictionary for QPY."""
@@ -181,7 +185,9 @@ class PulseAnnotationSerializer(OpenQASM3Serializer):
             data = ast.literal_eval(payload)
             return PulseEnvelopeAnnotation(**data)
         except (ValueError, SyntaxError, TypeError) as e:
-            raise ValueError(f"Failed to parse PulseEnvelopeAnnotation payload: {payload}") from e
+            raise ValueError(
+                f"Failed to parse PulseEnvelopeAnnotation payload: {payload}"
+            ) from e
 
 
 # Register the serializer with Qiskit's annotation system

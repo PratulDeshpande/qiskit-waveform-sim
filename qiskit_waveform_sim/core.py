@@ -160,7 +160,9 @@ class AnalyticalEnvelopes:
             env[left_mask] = np.clip((g_l - pedestal) / (1.0 - pedestal), 0.0, 1.0)
 
         if np.any(right_mask):
-            g_r = np.exp(-0.5 * ((t_dt[right_mask] - (risefall_dt + width)) / sigma) ** 2)
+            g_r = np.exp(
+                -0.5 * ((t_dt[right_mask] - (risefall_dt + width)) / sigma) ** 2
+            )
             env[right_mask] = np.clip((g_r - pedestal) / (1.0 - pedestal), 0.0, 1.0)
 
         return amp * env
@@ -240,7 +242,9 @@ class TargetWaveformSimulator:
         self.events_by_channel.clear()
         max_stop_dt = 0
 
-        for inst, start_dt in zip(scheduled_qc.data, scheduled_qc.op_start_times, strict=False):
+        for inst, start_dt in zip(
+            scheduled_qc.data, scheduled_qc.op_start_times, strict=False
+        ):
             op = inst.operation
             q_indices = tuple(scheduled_qc.find_bit(q).index for q in inst.qubits)
             max_stop_dt = max(
@@ -255,7 +259,8 @@ class TargetWaveformSimulator:
         self.total_duration_dt = max_stop_dt
         # Cache starts and max durations for binary search in get_snippet
         self._starts_by_channel = {
-            ch: [e.start_dt for e in events] for ch, events in self.events_by_channel.items()
+            ch: [e.start_dt for e in events]
+            for ch, events in self.events_by_channel.items()
         }
         self._max_duration_by_channel = {
             ch: max((e.duration_dt for e in events), default=0)
@@ -307,7 +312,8 @@ class TargetWaveformSimulator:
         self.total_duration_dt = cursor_dt
         # Cache starts and max durations for binary search in get_snippet
         self._starts_by_channel = {
-            ch: [e.start_dt for e in events] for ch, events in self.events_by_channel.items()
+            ch: [e.start_dt for e in events]
+            for ch, events in self.events_by_channel.items()
         }
         self._max_duration_by_channel = {
             ch: max((e.duration_dt for e in events), default=0)
@@ -413,7 +419,9 @@ class TargetWaveformSimulator:
                     box_ann = ann
             cursor_dt = start_dt
             for sub_inst in op.body.data:
-                sub_q = tuple(q_indices[op.body.find_bit(q).index] for q in sub_inst.qubits)
+                sub_q = tuple(
+                    q_indices[op.body.find_bit(q).index] for q in sub_inst.qubits
+                )
                 cursor_dt = self._lower_instruction(
                     sub_inst.operation,
                     sub_q,
@@ -504,7 +512,9 @@ class TargetWaveformSimulator:
                     duration_dt=half_dur,
                     op_name=f"{op.name}_cr+",
                     qubits=q_indices,
-                    frame_phase_rad=qubit_phase[t_q],  # Phase-locked to target qubit frame!
+                    frame_phase_rad=qubit_phase[
+                        t_q
+                    ],  # Phase-locked to target qubit frame!
                     shape="gaussian_square",
                     amp=complex(0.65 * scale),
                     risefall_dt=16,
@@ -636,7 +646,9 @@ class TargetWaveformSimulator:
             w_start = max(start_dt, ev.start_dt)
             w_stop = min(stop_dt, ev_stop)
             sl = slice(w_start - start_dt, w_stop - start_dt)
-            t_local_dt = np.arange(w_start - ev.start_dt, w_stop - ev.start_dt, dtype=np.float64)
+            t_local_dt = np.arange(
+                w_start - ev.start_dt, w_stop - ev.start_dt, dtype=np.float64
+            )
 
             if ev.shape == "drag":
                 baseband = AnalyticalEnvelopes.drag(
@@ -661,7 +673,8 @@ class TargetWaveformSimulator:
 
             # Apply Virtual-Z frame phase rotation and digital IF carrier modulation
             carrier_phase = (
-                2.0 * np.pi * self.if_freq_hz * (t_global_dt[sl] * self.dt) + ev.frame_phase_rad
+                2.0 * np.pi * self.if_freq_hz * (t_global_dt[sl] * self.dt)
+                + ev.frame_phase_rad
             )
             wave[sl] += baseband * np.exp(1j * carrier_phase)
             phase_trace[sl] = ev.frame_phase_rad
