@@ -3,7 +3,7 @@
 [![PyPI](https://img.shields.io/pypi/v/qiskit-waveform-sim.svg)](https://pypi.org/project/qiskit-waveform-sim/)
 [![Python](https://img.shields.io/pypi/pyversions/qiskit-waveform-sim.svg)](https://pypi.org/project/qiskit-waveform-sim/)
 [![License](https://img.shields.io/pypi/l/qiskit-waveform-sim.svg)](https://www.apache.org/licenses/LICENSE-2.0)
-[![Tests](https://github.com/Qiskit/qiskit-waveform-sim/workflows/Tests/badge.svg)](https://github.com/Qiskit/qiskit-waveform-sim/actions)
+[![Tests](https://github.com/PratulDeshpande/qiskit-waveform-sim/workflows/Tests/badge.svg)](https://github.com/PratulDeshpande/qiskit-waveform-sim/actions)
 
 **Zero-bloat Classical Control Waveform Simulator & Interactive Pulse Sheet Viewer for Qiskit 2.5+**
 
@@ -47,7 +47,7 @@ pip install qiskit-waveform-sim
 
 For development:
 ```bash
-git clone https://github.com/Qiskit/qiskit-waveform-sim
+git clone https://github.com/PratulDeshpande/qiskit-waveform-sim
 cd qiskit-waveform-sim
 pip install -e ".[dev,test,docs]"
 ```
@@ -192,7 +192,7 @@ If you use `qiskit-waveform-sim` in your research, please cite:
   author       = {Qiskit Community},
   title        = {qiskit-waveform-sim: Classical Control Waveform Simulator for Qiskit 2.5+},
   year         = {2026},
-  url          = {https://github.com/Qiskit/qiskit-waveform-sim},
+  url          = {https://github.com/PratulDeshpande/qiskit-waveform-sim},
   version      = {0.1.0},
   doi          = {10.5281/zenodo.XXXXXXX}
 }
