@@ -32,7 +32,7 @@ classifiers = [
 ]
 requires-python = ">=3.11"
 dependencies = [
-    "qiskit>=2.0.0",
+    "qiskit>=2.5.0",
     "numpy>=1.24",
     "matplotlib>=3.7",
     "plotly>=5.18",
@@ -65,11 +65,11 @@ export = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/Qiskit/qiskit-waveform-sim"
-Repository = "https://github.com/Qiskit/qiskit-waveform-sim"
-Documentation = "https://qiskit-waveform-sim.readthedocs.io"
-Changelog = "https://github.com/Qiskit/qiskit-waveform-sim/blob/main/CHANGELOG.md"
-Issues = "https://github.com/Qiskit/qiskit-waveform-sim/issues"
+Homepage = "https://github.com/PratulDeshpande/qiskit-waveform-sim"
+Repository = "https://github.com/PratulDeshpande/qiskit-waveform-sim"
+Documentation = "https://pratuldeshpande.github.io/qiskit-waveform-sim"
+Changelog = "https://github.com/PratulDeshpande/qiskit-waveform-sim/blob/main/CHANGELOG.md"
+Issues = "https://github.com/PratulDeshpande/qiskit-waveform-sim/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
