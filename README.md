@@ -144,7 +144,7 @@ print(qasm3_str)
 - [Quickstart Tutorial](https://pratuldeshpande.github.io/qiskit-waveform-sim/tutorials/quickstart.html)
 - [Custom Pulse Annotations & OpenQASM 3 Export](https://pratuldeshpande.github.io/qiskit-waveform-sim/tutorials/annotations.html)
 - [LabOne Q / RFSoC Integration](https://pratuldeshpande.github.io/qiskit-waveform-sim/tutorials/hardware_export.html)
-- [API Reference](https://pratuldeshpande.github.io/qiskit-waveform-sim/api.html)
+- [API Reference](https://pratuldeshpande.github.io/qiskit-waveform-sim/api/core.html)
 
 ---
 
