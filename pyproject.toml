@@ -57,7 +57,7 @@ docs = [
     "myst-parser>=2.0",
     "nbsphinx>=0.9",
     "jupyter>=1.0",
-    "ipykernel>=6.0",
+    "ipykernel>=7.4.0",
 ]
 export = [
     "kaleido>=0.2",
