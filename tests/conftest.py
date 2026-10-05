@@ -5,7 +5,14 @@ Test configuration and fixtures for qiskit-waveform-sim.
 import pytest
 from qiskit import QuantumCircuit
 from qiskit.providers.fake_provider import GenericBackendV2
-from qiskit.transpiler import generate_preset_pass_manager
+
+# Qiskit version compatibility: generate_preset_pass_manager moved in 2.0
+try:
+    # Qiskit 2.x
+    from qiskit.transpiler import generate_preset_pass_manager
+except ImportError:
+    # Qiskit 1.x
+    from qiskit.transpiler.preset_passmanagers import generate_preset_pass_manager
 
 
 @pytest.fixture(scope="session")
