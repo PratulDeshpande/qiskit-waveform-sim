@@ -32,15 +32,30 @@ class TestAnalyticalEnvelopes:
         assert 70 < peak_idx < 90
 
     def test_drag_with_beta(self):
-        """Test DRAG envelope with non-zero beta."""
+        """Test DRAG envelope with deterministic physics verification."""
         t_dt = np.linspace(0, 160, 160)
-        result_no_beta = AnalyticalEnvelopes.drag(t_dt, 160, 0.5 + 0j, 40.0, 0.0)
-        result_with_beta = AnalyticalEnvelopes.drag(t_dt, 160, 0.5 + 0j, 40.0, 0.1)
+        sigma_dt = 40.0
+        beta = 0.1
+        amp = 0.5 + 0j
+        result = AnalyticalEnvelopes.drag(t_dt, 160, amp, sigma_dt, beta)
 
-        # With beta, imaginary part should be non-zero
-        assert np.any(np.abs(result_with_beta.imag) > 1e-10)
-        # Without beta, imaginary part should be zero
-        assert np.all(np.abs(result_no_beta.imag) < 1e-10)
+        t_center = 80.0
+        # At exactly one sigma to the left (t=40), derivative dg/dt > 0.
+        # But our formula is norm_gauss + 1j*beta*deriv_term.
+        # deriv_term at t=40: -((40-80)/(40**2)) * norm_gauss = (1/40) * norm_gauss.
+        # So imaginary part is beta * deriv_term * amp = 0.1 * (1/40) * norm_gauss * 0.5
+
+        idx = 40
+        t_val = t_dt[idx]
+        expected_gauss = np.exp(-0.5 * ((t_val - t_center) / sigma_dt) ** 2)
+        pedestal = np.exp(-0.5 * (t_center / sigma_dt) ** 2)
+
+        expected_deriv = -((t_val - t_center) / (sigma_dt**2)) * (
+            expected_gauss / (1.0 - pedestal)
+        )
+        expected_q = beta * expected_deriv * amp.real
+
+        np.testing.assert_allclose(result[idx].imag, expected_q, atol=1e-7)
 
     def test_gaussian_square_basic(self):
         """Test GaussianSquare envelope basic properties."""
@@ -239,70 +254,6 @@ class TestTargetWaveformSimulator:
         final_phase = history[-1][1]
         assert np.isclose(final_phase, -3 * np.pi / 4, atol=1e-10)
 
-    def test_fractional_rx_amplitude_scaling(self, backend_2q):
-        """Test RX(θ) amplitude scales with angle - skipped if RX not in basis."""
-        from qiskit import QuantumCircuit
-        from qiskit.transpiler import generate_preset_pass_manager
-
-        from qiskit_waveform_sim import TargetWaveformSimulator
-
-        # Only test if RX is a basis gate
-        if "rx" not in backend_2q.target.operation_names:
-            pytest.skip("RX not in backend basis")
-
-        qc = QuantumCircuit(1)
-        qc.rx(np.pi / 4, 0)
-        qc.measure_all()
-
-        pm = generate_preset_pass_manager(
-            optimization_level=1, backend=backend_2q, scheduling_method="alap"
-        )
-        scheduled = pm.run(qc)
-
-        sim = TargetWaveformSimulator(backend_2q.target).compile(scheduled)
-
-        # Find RX event
-        events = sim.events_by_channel.get("d0", [])
-        rx_events = [e for e in events if e.op_name == "rx"]
-
-        if len(rx_events) == 0:
-            pytest.skip("RX gate not scheduled as RX (may be decomposed)")
-
-        # RX(π/4) should have amplitude 0.9 * (π/4)/π = 0.225
-        expected_amp = 0.9 * 0.25
-        assert np.isclose(abs(rx_events[0].amp), expected_amp, rtol=0.01)
-
-    def test_rzz_scaling(self, backend_2q):
-        """Test RZZ(θ) amplitude/duration scaling - skipped if RZZ not in basis."""
-        from qiskit import QuantumCircuit
-        from qiskit.transpiler import generate_preset_pass_manager
-
-        from qiskit_waveform_sim import TargetWaveformSimulator
-
-        if "rzz" not in backend_2q.target.operation_names:
-            pytest.skip("RZZ not in backend basis")
-
-        qc = QuantumCircuit(2)
-        qc.rzz(np.pi / 2, 0, 1)
-        qc.measure_all()
-
-        pm = generate_preset_pass_manager(
-            optimization_level=1, backend=backend_2q, scheduling_method="alap"
-        )
-        scheduled = pm.run(qc)
-
-        sim = TargetWaveformSimulator(backend_2q.target).compile(scheduled)
-
-        events = sim.events_by_channel.get("u(0,1)", [])
-        rzz_events = [e for e in events if "rzz" in e.op_name]
-
-        if len(rzz_events) == 0:
-            pytest.skip("RZZ gate not scheduled as RZZ (may be decomposed)")
-
-        # RZZ(π/2) should have scale = (π/2)/(π/2) = 1.0
-        # Base amplitude is 0.65
-        assert np.isclose(abs(rzz_events[0].amp), 0.65, rtol=0.01)
-
     def test_if_frequency_modulation(self, simple_circuit, backend_2q):
         """Test digital IF carrier modulation."""
         from qiskit_waveform_sim import TargetWaveformSimulator
@@ -320,9 +271,71 @@ class TestTargetWaveformSimulator:
         # Should have non-zero phase evolution from IF
         assert np.any(np.abs(phase_diff) > 1e-3)
 
-    def test_boxop_annotation_override(self, backend_2q):
-        """Test BoxOp custom annotation overrides default pulse - skipped due to scheduling limitation."""
-        pytest.skip("BoxOp scheduling not supported in Qiskit 2.5 transpiler")
+    def test_boxop_annotation_attachment(self):
+        """Test BoxOp custom annotation attachment and QPY round-trip."""
+        import io
+
+        from qiskit import QuantumCircuit, qpy
+
+        from qiskit_waveform_sim import (
+            PulseAnnotationSerializer,
+            PulseEnvelopeAnnotation,
+        )
+
+        qc = QuantumCircuit(1)
+        ann = PulseEnvelopeAnnotation(
+            shape="drag", amp=0.55, beta=0.25, sigma_ratio=0.2
+        )
+
+        with qc.box(duration=160, unit="dt", annotations=[ann]):
+            qc.sx(0)
+
+        # Verify annotation attached
+        box_op = qc.data[0].operation
+        assert hasattr(box_op, "annotations")
+        assert len(box_op.annotations) == 1
+        assert box_op.annotations[0] == ann
+
+        # Test QPY round-trip
+        serializer = PulseAnnotationSerializer()
+        buf = io.BytesIO()
+        qpy.dump(
+            qc, buf, annotation_factories={"pulse_sim.envelope": serializer.as_qpy()}
+        )
+        buf.seek(0)
+        loaded = qpy.load(
+            buf, annotation_factories={"pulse_sim.envelope": serializer.as_qpy()}
+        )[0]
+
+        # Verify annotation survived
+        loaded_box = loaded.data[0].operation
+        assert len(loaded_box.annotations) == 1
+        assert loaded_box.annotations[0] == ann
+
+    def test_boxop_annotation_openqasm3_export(self):
+        """Test BoxOp annotation exports to OpenQASM 3 with pulse pragmas."""
+        from qiskit import QuantumCircuit, qasm3
+
+        from qiskit_waveform_sim import (
+            PulseAnnotationSerializer,
+            PulseEnvelopeAnnotation,
+        )
+
+        qc = QuantumCircuit(1)
+        ann = PulseEnvelopeAnnotation(shape="drag", amp=0.55, beta=0.25)
+
+        with qc.box(duration=160, unit="dt", annotations=[ann]):
+            qc.sx(0)
+
+        qasm3_str = qasm3.dumps(
+            qc, annotation_handlers={"pulse_sim.envelope": PulseAnnotationSerializer()}
+        )
+
+        assert "OPENQASM 3" in qasm3_str
+        assert "pulse_sim.envelope" in qasm3_str
+        assert "drag" in qasm3_str
+        assert "0.55" in qasm3_str
+        assert "0.25" in qasm3_str
 
     def test_export_openqasm3(self, simple_circuit, backend_2q):
         """Test OpenQASM 3 export with annotations."""

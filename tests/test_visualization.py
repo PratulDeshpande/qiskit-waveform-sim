@@ -220,16 +220,38 @@ class TestVisualizationWithMockSimulator:
             mock_write.assert_called_once()
 
     def test_plot_pulse_sheet_matplotlib(self, mock_simulator):
-        """Test Matplotlib pulse sheet - skipped on headless systems."""
-        pytest.skip("Matplotlib tests require display - run manually")
+        """Test Matplotlib pulse sheet with Agg backend."""
+        import matplotlib
+
+        matplotlib.use("Agg")
+        from qiskit_waveform_sim.visualization.matplotlib import plot_pulse_sheet
+
+        fig = plot_pulse_sheet(mock_simulator)
+        assert len(fig.axes) > 0
+        assert isinstance(fig, matplotlib.figure.Figure)
 
     def test_plot_iq_waveforms_matplotlib(self, mock_simulator):
-        """Test Matplotlib I/Q waveforms - skipped on headless systems."""
-        pytest.skip("Matplotlib tests require display - run manually")
+        """Test Matplotlib I/Q waveforms with Agg backend."""
+        import matplotlib
+
+        matplotlib.use("Agg")
+        from qiskit_waveform_sim.visualization.matplotlib import plot_iq_waveforms
+
+        snippet = mock_simulator.get_snippet("d0", 0, 100)
+        fig = plot_iq_waveforms(snippet)
+        assert len(fig.axes) > 0
+        assert isinstance(fig, matplotlib.figure.Figure)
 
     def test_plot_phase_tracking_matplotlib(self, mock_simulator):
-        """Test Matplotlib phase tracking plot - skipped on headless systems."""
-        pytest.skip("Matplotlib tests require display - run manually")
+        """Test Matplotlib phase tracking plot with Agg backend."""
+        import matplotlib
+
+        matplotlib.use("Agg")
+        from qiskit_waveform_sim.visualization.matplotlib import plot_phase_tracking
+
+        fig = plot_phase_tracking(mock_simulator)
+        assert len(fig.axes) > 0
+        assert isinstance(fig, matplotlib.figure.Figure)
 
 
 class TestVisualizationEdgeCases:

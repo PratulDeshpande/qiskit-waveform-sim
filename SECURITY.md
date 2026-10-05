@@ -15,7 +15,7 @@ If you discover a security vulnerability in qiskit-waveform-sim, please report
 it responsibly:
 
 1. **Do not** open a public GitHub issue for security vulnerabilities.
-2. Email the details to: **qiskit@us.ibm.com**
+2. Email the details to: **pratul.deshpande06@gmail.com**
 3. Include:
    - A description of the vulnerability
    - Steps to reproduce (if possible)
@@ -43,4 +43,4 @@ it responsibly:
 
 ## Contact
 
-Security team: qiskit@us.ibm.com
+Security team: pratul.deshpande06@gmail.com

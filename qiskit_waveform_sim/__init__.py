@@ -1,5 +1,5 @@
 """
-qiskit-waveform-sim: Zero-bloat Classical Control Waveform Simulator & Interactive Pulse Sheet Viewer for Qiskit 2.5+
+qiskit-waveform-sim: Zero-bloat Classical Control Waveform Simulator & Interactive Pulse Sheet Viewer for Qiskit 2.0+
 
 This package provides a native, offline, lazy-evaluated waveform simulator that works directly
 with Qiskit's modern Target, op_start_times, BoxOp, fractional gates, and the new
@@ -25,7 +25,7 @@ from qiskit_waveform_sim.visualization import (
     show_pulse_sheet,
 )
 
-__version__ = "0.1.0"
+__version__ = "0.1.2"
 __all__ = [
     "TargetWaveformSimulator",
     "WaveformSnippet",

@@ -67,11 +67,7 @@ def create_pulse_sheet(
             text="No events to display", xref="paper", yref="paper", x=0.5, y=0.5
         )
         return fig
-
-    # Limit channels if too many
     display_channels = channels[: config.max_channels]
-
-    # Determine time range
     if config.time_window_ns:
         t_start_ns, t_stop_ns = config.time_window_ns
         t_start_dt = int(t_start_ns / (sim.dt * 1e9))
@@ -82,8 +78,6 @@ def create_pulse_sheet(
 
     t_start_ns = t_start_dt * sim.dt * 1e9
     t_stop_ns = t_stop_dt * sim.dt * 1e9
-
-    # Create subplots - one row per channel
     n_channels = len(display_channels)
     fig = make_subplots(
         rows=n_channels,
@@ -93,8 +87,6 @@ def create_pulse_sheet(
         subplot_titles=[f"<b>{ch}</b>" for ch in display_channels],
         row_heights=[1.0 / n_channels] * n_channels,
     )
-
-    # Color scheme for different operation types
     op_colors = {
         "drag": "#1f77b4",  # Blue for single-qubit drives
         "gaussian_square": "#2ca02c",  # Green for two-qubit/measure
@@ -108,8 +100,6 @@ def create_pulse_sheet(
         events = sim.events_by_channel.get(channel, [])
         if not events:
             continue
-
-        # Filter events in time window
         visible_events = [
             ev
             for ev in events
@@ -119,8 +109,6 @@ def create_pulse_sheet(
         for ev in visible_events:
             ev_start_ns = ev.start_dt * sim.dt * 1e9
             ev_stop_ns = (ev.start_dt + ev.duration_dt) * sim.dt * 1e9
-
-            # Clip to window
             ev_start_ns = max(ev_start_ns, t_start_ns)
             ev_stop_ns = min(ev_stop_ns, t_stop_ns)
             ev_duration_ns = ev_stop_ns - ev_start_ns
@@ -129,8 +117,6 @@ def create_pulse_sheet(
                 continue
 
             color = op_colors.get(ev.shape, op_colors["default"])
-
-            # Add rectangle for pulse
             fig.add_shape(
                 type="rect",
                 x0=ev_start_ns,
@@ -144,8 +130,6 @@ def create_pulse_sheet(
                 line={"color": color, "width": 1},
                 layer="below",
             )
-
-            # Add operation label
             label = ev.op_name
             if config.show_annotations and ev.shape != "virtual_z":
                 label += f" (φ={ev.frame_phase_rad:.2f})"
@@ -160,8 +144,6 @@ def create_pulse_sheet(
                 font={"size": 10, "color": "white"},
                 align="center",
             )
-
-            # Add phase marker for virtual Z
             if ev.shape == "virtual_z" and config.show_phase_markers:
                 fig.add_shape(
                     type="line",
@@ -182,8 +164,6 @@ def create_pulse_sheet(
                     showarrow=False,
                     font={"size": 9, "color": "red"},
                 )
-
-    # Update layout
     fig.update_layout(
         title={
             "text": "Qiskit Waveform Simulator - Pulse Sheet",
@@ -196,16 +176,12 @@ def create_pulse_sheet(
         hovermode="x unified",
         margin={"l": 100, "r": 50, "t": 80, "b": 50},
     )
-
-    # Update x-axes
     fig.update_xaxes(
         title_text="Time (ns)",
         row=n_channels,
         col=1,
         range=[t_start_ns, t_stop_ns],
     )
-
-    # Update y-axes (hide tick labels)
     for i in range(1, n_channels + 1):
         fig.update_yaxes(visible=False, row=i, col=1)
 
@@ -251,8 +227,6 @@ def create_iq_oscilloscope(
     time_ns = snippet.time_ns
     wave = snippet.wave
     phase_rad = snippet.phase_rad
-
-    # Create subplots
     rows = 3 if show_phase else 2
     row_heights = [0.4, 0.4, 0.2] if show_phase else [0.5, 0.5]
     subplot_titles = (
@@ -297,8 +271,6 @@ def create_iq_oscilloscope(
         row=2,
         col=1,
     )
-
-    # Add envelope magnitude
     envelope = np.abs(wave)
     fig.add_trace(
         go.Scatter(
@@ -326,8 +298,6 @@ def create_iq_oscilloscope(
         row=1,
         col=1,
     )
-
-    # Phase trace
     if show_phase:
         fig.add_trace(
             go.Scatter(
@@ -341,8 +311,6 @@ def create_iq_oscilloscope(
             row=3,
             col=1,
         )
-
-    # Add event markers
     for ev in snippet.events:
         if ev.duration_dt > 0:
             ev_start = ev.start_dt * sim.dt * 1e9
@@ -358,8 +326,6 @@ def create_iq_oscilloscope(
                     row=row,
                     col=1,
                 )
-
-            # Add event label on top trace
             fig.add_annotation(
                 x=(ev_start + ev_stop) / 2,
                 y=1.02,
@@ -507,16 +473,7 @@ def create_combined_view(
     time_ns = snippet.time_ns
     t_start_ns = time_ns[0]
     t_stop_ns = time_ns[-1]
-
-    # Create pulse sheet for the time window
     config.time_window_ns = (t_start_ns, t_stop_ns)
-    pulse_fig = create_pulse_sheet(sim, config)
-
-    # Create I/Q oscilloscope
-    create_iq_oscilloscope(sim, channel, start_dt, length_dt, show_phase=True)
-
-    # Combine into single figure with shared x-axis
-    len(pulse_fig.data)  # Not directly usable, reconstruct
 
     # Simpler: create fresh combined figure
     channels = sim.get_channels()
@@ -533,8 +490,6 @@ def create_combined_view(
         + ["I (In-Phase)", "Q (Quadrature)", "Frame Phase (rad)"],
         row_heights=[0.6 / total_rows] * n_channels + [0.4 / total_rows] * 3,
     )
-
-    # Add pulse sheet traces
     op_colors = {
         "drag": "#1f77b4",
         "gaussian_square": "#2ca02c",
@@ -573,8 +528,6 @@ def create_combined_view(
                 line={"color": color, "width": 1},
                 layer="below",
             )
-
-    # Add I/Q traces on last 3 rows
     iq_row = n_channels + 1
     fig.add_trace(
         go.Scatter(

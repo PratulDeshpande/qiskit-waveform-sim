@@ -64,8 +64,6 @@ def plot_pulse_sheet(
             transform=ax.transAxes,
         )
         return fig
-
-    # Time range
     if time_range_ns:
         t_start_ns, t_stop_ns = time_range_ns
         t_start_dt = int(t_start_ns / (sim.dt * 1e9))
@@ -76,8 +74,6 @@ def plot_pulse_sheet(
 
     t_start_ns = t_start_dt * sim.dt * 1e9
     t_stop_ns = t_stop_dt * sim.dt * 1e9
-
-    # Color scheme
     op_colors = {
         "drag": "#1f77b4",
         "gaussian_square": "#2ca02c",
@@ -114,8 +110,6 @@ def plot_pulse_sheet(
                 continue
 
             color = op_colors.get(ev.shape, op_colors["default"])
-
-            # Pulse rectangle
             rect = mpatches.Rectangle(
                 (ev_start_ns, y_base + 0.05 * channel_height),
                 ev_duration_ns,
@@ -156,8 +150,6 @@ def plot_pulse_sheet(
                     color="red",
                     rotation=90,
                 )
-
-        # Channel label
         ax.text(
             t_start_ns - (t_stop_ns - t_start_ns) * 0.02,
             y_center,
@@ -233,7 +225,6 @@ def plot_iq_waveforms(
         axes = [ax] if not isinstance(ax, (list, np.ndarray)) else ax
         fig = axes[0].figure
         if len(axes) < n_rows:
-            # Need to create more axes
             for _ in range(n_rows - len(axes)):
                 new_ax = fig.add_subplot(n_rows, 1, len(axes) + 1, sharex=axes[0])
                 axes.append(new_ax)
@@ -280,8 +271,6 @@ def plot_iq_waveforms(
         axes[2].grid(True, alpha=0.3)
     else:
         axes[1].set_xlabel("Time (ns)", fontsize=10)
-
-    # Event markers
     if show_events:
         for ev in events:
             if ev.duration_dt > 0:
@@ -422,8 +411,6 @@ def plot_phase_tracking(
         times_dt = [h[0] for h in history]
         phases = [h[1] for h in history]
         times_ns = np.array(times_dt) * sim.dt * 1e9
-
-        # Step plot for phase changes
         ax.step(
             times_ns, phases, where="post", label=f"Q{q}", color=color, linewidth=1.5
         )

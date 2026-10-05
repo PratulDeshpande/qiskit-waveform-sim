@@ -3,7 +3,7 @@
 Welcome to qiskit-waveform-sim's documentation!
 ================================================
 
-**qiskit-waveform-sim** is a zero-bloat Classical Control Waveform Simulator & Interactive Pulse Sheet Viewer for Qiskit 2.5+.
+**qiskit-waveform-sim** is a zero-bloat Classical Control Waveform Simulator & Interactive Pulse Sheet Viewer for Qiskit 2.0+.
 
 It bridges the post-Pulse waveform gap created by Qiskit 2.0-2.5's architectural overhaul, providing:
 

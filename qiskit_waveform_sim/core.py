@@ -8,14 +8,16 @@ Virtual-Z frame tracking, matching LabOne Q OutputSimulator architecture.
 from __future__ import annotations
 
 import bisect
+import warnings
 from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
-from qiskit import QuantumCircuit
+from qiskit import QuantumCircuit, qasm3
 from qiskit.circuit import BoxOp
 from qiskit.transpiler import Target
 
+from qiskit_waveform_sim import PulseAnnotationSerializer
 from qiskit_waveform_sim.annotations import PulseEnvelopeAnnotation
 
 
@@ -39,6 +41,16 @@ class ChannelEvent:
     beta: float = 0.0
     sigma_dt: float = 16.0
     risefall_dt: int = 16
+
+    def __post_init__(self) -> None:
+        if self.duration_dt < 0:
+            raise ValueError(
+                f"duration_dt must be non-negative, got {self.duration_dt}"
+            )
+        if abs(self.amp) > 1.0 + 1e-12:
+            raise ValueError(
+                f"Amplitude magnitude {abs(self.amp):.6f} exceeds DAC full-scale (1.0)"
+            )
 
 
 @dataclass
@@ -97,9 +109,14 @@ class AnalyticalEnvelopes:
         Returns
         -------
         np.ndarray
-            Complex baseband envelope Ω(t) = A[g_norm(t) - iβ g_norm(t) * g'(t)/g(t)/σ]
+            Complex baseband envelope Ω(t) = A[g_norm(t) - iβ d(g_norm)/dt]
             with zero boundary conditions on both real and imaginary parts.
+            The Q quadrature is -β times the derivative of the I quadrature envelope.
         """
+        if abs(amp) > 1.0 + 1e-12:
+            raise ValueError(
+                f"Amplitude magnitude {abs(amp):.6f} exceeds DAC full-scale (1.0)"
+            )
         t_center = 0.5 * duration_dt
         gauss = np.exp(-0.5 * ((t_dt - t_center) / sigma_dt) ** 2)
         pedestal = np.exp(-0.5 * (t_center / sigma_dt) ** 2)
@@ -107,13 +124,12 @@ class AnalyticalEnvelopes:
         # Normalized Gaussian with zero boundary conditions
         norm_gauss = np.clip((gauss - pedestal) / (1.0 - pedestal), 0.0, None)
 
-        # Analytical derivative: dg/dt = -(t - t_c)/σ² * g(t)
-        # Window the derivative by norm_gauss to ensure zero boundaries on Q
-        deriv_term = -((t_dt - t_center) / sigma_dt) * norm_gauss
+        # True analytical derivative matching Qiskit's Drag definition
+        # Derivative of norm_gauss is proportional to gauss, not norm_gauss
+        deriv_term = -((t_dt - t_center) / (sigma_dt**2)) * (gauss / (1.0 - pedestal))
 
-        # Complex DRAG: Ω(t) = A * [g_norm(t) - iβ * (1/σ) * dg/dt * window]
-        # Note: β ≈ α/Δ for transmon (anharmonicity/detuning)
-        return amp * (norm_gauss - 1j * beta * deriv_term)  # type: ignore
+        # Complex DRAG: Ω(t) = A * [norm_gauss + i * β * deriv_term]
+        return amp * (norm_gauss + 1j * beta * deriv_term)  # type: ignore
 
     @staticmethod
     def gaussian_square(
@@ -141,6 +157,10 @@ class AnalyticalEnvelopes:
         np.ndarray
             Real-valued envelope (0 to 1) scaled by amplitude
         """
+        if abs(amp) > 1.0 + 1e-12:
+            raise ValueError(
+                f"Amplitude magnitude {abs(amp):.6f} exceeds DAC full-scale (1.0)"
+            )
         risefall_dt = min(risefall_dt, duration_dt // 2)
         if risefall_dt <= 0:
             return np.full_like(t_dt, amp, dtype=np.complex128)
@@ -170,7 +190,7 @@ class AnalyticalEnvelopes:
 
 class TargetWaveformSimulator:
     """
-    LabOne Q OutputSimulator equivalent for Qiskit 2.5+ scheduled circuits.
+    LabOne Q OutputSimulator equivalent for Qiskit 2.0+ scheduled circuits.
 
     Tracks Virtual-Z phase accumulation per qubit and synthesizes I/Q waveforms
     lazily on-demand via windowed snippet extraction.
@@ -224,17 +244,11 @@ class TargetWaveformSimulator:
         TargetWaveformSimulator
             Self, for method chaining
         """
-        try:
-            if scheduled_qc.op_start_times is None:
-                raise ValueError(
-                    "Circuit must be scheduled first. "
-                    "Use generate_preset_pass_manager(..., scheduling_method='alap')."
-                )
-        except AttributeError:
+        if getattr(scheduled_qc, "op_start_times", None) is None:
             raise ValueError(
                 "Circuit must be scheduled first. "
                 "Use generate_preset_pass_manager(..., scheduling_method='alap')."
-            ) from None
+            )
 
         self._num_qubits = scheduled_qc.num_qubits
         qubit_phase: dict[int, float] = dict.fromkeys(range(self._num_qubits), 0.0)
@@ -268,59 +282,6 @@ class TargetWaveformSimulator:
         }
         return self
 
-    def compile_unscheduled(self, qc: QuantumCircuit) -> TargetWaveformSimulator:
-        """
-        Compile an unscheduled circuit with BoxOp/control flow into channel events.
-
-        This method performs a simple ALAP-like scheduling locally without requiring
-        the transpiler's scheduling passes. It assigns sequential start times based on
-        instruction durations, handles BoxOp by recursively lowering its body, and
-        applies custom PulseEnvelopeAnnotation overrides.
-
-        Note: This is a fallback for circuits with control flow (BoxOp) that cannot
-        be scheduled by Qiskit's transpiler. For best results with scheduled circuits,
-        use `compile()` with a properly scheduled circuit.
-
-        Parameters
-        ----------
-        qc : QuantumCircuit
-            Circuit (may contain BoxOp, annotations, fractional gates)
-
-        Returns
-        -------
-        TargetWaveformSimulator
-            Self, for method chaining
-        """
-        self._num_qubits = qc.num_qubits
-        qubit_phase: dict[int, float] = dict.fromkeys(range(self._num_qubits), 0.0)
-        self.phase_history = {q: [(0, 0.0)] for q in range(self._num_qubits)}
-        self.events_by_channel.clear()
-
-        # Simple ALAP-style scheduling: process instructions in reverse for ASAP,
-        # or forward for simple sequential scheduling
-        cursor_dt = 0
-
-        for inst in qc.data:
-            op = inst.operation
-            q_indices = tuple(qc.find_bit(q).index for q in inst.qubits)
-            cursor_dt = self._lower_instruction(op, q_indices, cursor_dt, qubit_phase)
-
-        # Sort events per channel by start_dt for O(log N) binary search
-        for ch in self.events_by_channel:
-            self.events_by_channel[ch].sort(key=lambda e: e.start_dt)
-
-        self.total_duration_dt = cursor_dt
-        # Cache starts and max durations for binary search in get_snippet
-        self._starts_by_channel = {
-            ch: [e.start_dt for e in events]
-            for ch, events in self.events_by_channel.items()
-        }
-        self._max_duration_by_channel = {
-            ch: max((e.duration_dt for e in events), default=0)
-            for ch, events in self.events_by_channel.items()
-        }
-        return self
-
     def _get_duration_dt(self, op, q_indices: tuple[int, ...]) -> int:
         """Extract instruction duration in dt from Target or BoxOp metadata."""
         if op.name in ("rz", "barrier"):
@@ -342,7 +303,6 @@ class TargetWaveformSimulator:
             elif unit == "ps":
                 return int(round(dur * 1e-12 / self.dt))
             else:
-                # Default to dt if unknown unit
                 return int(dur)
         if isinstance(op, BoxOp) and op.duration is not None:
             # BoxOp duration may be in different units
@@ -367,8 +327,6 @@ class TargetWaveformSimulator:
             props = self.target[op.name][q_indices]
             if props and props.duration is not None:
                 return int(round(props.duration / self.dt))
-        # Warn for unknown ops but continue with fallback
-        import warnings
 
         if op.name not in (
             "measure",
@@ -435,7 +393,6 @@ class TargetWaveformSimulator:
         dur_dt = self._get_duration_dt(op, q_indices)
         stop_dt = start_dt + dur_dt
 
-        # 1. Virtual-Z Gate: 0 dt frame phase shift
         if op.name == "rz":
             lam = float(op.params[0])
             q0 = q_indices[0]
@@ -458,9 +415,24 @@ class TargetWaveformSimulator:
         if op.name in ("delay", "barrier"):
             return stop_dt
 
-        # 2. Single-Qubit Drive Gates (sx, x, rx)
         if len(q_indices) == 1 and op.name in ("sx", "x", "rx"):
             q0 = q_indices[0]
+
+            # Try to extract amplitude from Target calibration (Qiskit 1.x)
+            has_cal = False
+            try:
+                if op.name in self.target and q_indices in self.target[op.name]:
+                    cal = getattr(self.target[op.name][q_indices], "calibration", None)
+                    if cal is not None:
+                        has_cal = True
+            except (KeyError, AttributeError):
+                pass
+
+            if has_cal:
+                # We could attempt to parse the ScheduleBlock here.
+                # For now, we note that it's uncalibrated analytical generation.
+                pass
+
             if override_ann is not None:
                 shape = override_ann.shape
                 amp = override_ann.amp
@@ -472,11 +444,13 @@ class TargetWaveformSimulator:
                 beta = 0.08
                 sigma_dt = dur_dt * 0.25
                 risefall_dt = 16
+
+                # Uncalibrated Analytical Fallback (since we don't parse pulse schedules)
                 if op.name == "sx":
                     amp = 0.45
                 elif op.name == "x":
                     amp = 0.90
-                else:  # Fractional rx(theta)
+                else:
                     theta = float(op.params[0])
                     amp = 0.90 * (theta / np.pi)
 
@@ -496,65 +470,93 @@ class TargetWaveformSimulator:
                 )
             )
 
-        # 3. Two-Qubit Entangling Gates (cx, ecr, rzz) -> ControlChannel u_{c,t}
         elif len(q_indices) == 2 and op.name in ("cx", "ecr", "rzz"):
             c_q, t_q = q_indices
             scale = (float(op.params[0]) / (0.5 * np.pi)) if op.name == "rzz" else 1.0
 
-            # Echoed Cross-Resonance: positive CR tone + echo X on control + negative CR tone
-            half_dur = dur_dt // 2
+            # Uncalibrated Analytical Fallback for CR amplitude
+            cr_amp = complex(0.65 * scale)
 
-            # First half: positive CR drive on control channel, phase-locked to TARGET frame
-            self._append_event(
-                ChannelEvent(
-                    channel=f"u({c_q},{t_q})",
-                    start_dt=start_dt,
-                    duration_dt=half_dur,
-                    op_name=f"{op.name}_cr+",
-                    qubits=q_indices,
-                    frame_phase_rad=qubit_phase[
-                        t_q
-                    ],  # Phase-locked to target qubit frame!
-                    shape="gaussian_square",
-                    amp=complex(0.65 * scale),
-                    risefall_dt=16,
-                )
-            )
-
-            # Second half: negative CR drive (echoed)
-            self._append_event(
-                ChannelEvent(
-                    channel=f"u({c_q},{t_q})",
-                    start_dt=start_dt + half_dur,
-                    duration_dt=dur_dt - half_dur,
-                    op_name=f"{op.name}_cr-",
-                    qubits=q_indices,
-                    frame_phase_rad=qubit_phase[t_q] + np.pi,
-                    shape="gaussian_square",
-                    amp=complex(0.65 * scale),
-                    risefall_dt=16,
-                )
-            )
-
-            # Echo X on control qubit drive channel (for ecr)
             if op.name == "ecr":
+                x_dur = min(
+                    160, dur_dt // 3
+                )  # Echo X is a fixed short pulse (e.g. 160dt)
+                cr_dur = (dur_dt - x_dur) // 2
+
+                self._append_event(
+                    ChannelEvent(
+                        channel=f"u({c_q},{t_q})",
+                        start_dt=start_dt,
+                        duration_dt=cr_dur,
+                        op_name=f"{op.name}_cr+",
+                        qubits=q_indices,
+                        frame_phase_rad=qubit_phase[t_q],
+                        shape="gaussian_square",
+                        amp=cr_amp,
+                        risefall_dt=16,
+                    )
+                )
+
                 self._append_event(
                     ChannelEvent(
                         channel=f"d{c_q}",
-                        start_dt=start_dt + half_dur,
-                        duration_dt=dur_dt - half_dur,
+                        start_dt=start_dt + cr_dur,
+                        duration_dt=x_dur,
                         op_name="ecr_echo_x",
                         qubits=(c_q,),
                         frame_phase_rad=qubit_phase[c_q],
                         shape="drag",
                         amp=0.90 + 0.0j,
                         beta=0.08,
-                        sigma_dt=(dur_dt - half_dur) * 0.25,
+                        sigma_dt=x_dur * 0.25,
                         risefall_dt=16,
                     )
                 )
 
-        # 4. Readout Measurement -> MeasureChannel m_q
+                self._append_event(
+                    ChannelEvent(
+                        channel=f"u({c_q},{t_q})",
+                        start_dt=start_dt + cr_dur + x_dur,
+                        duration_dt=dur_dt - cr_dur - x_dur,
+                        op_name=f"{op.name}_cr-",
+                        qubits=q_indices,
+                        frame_phase_rad=qubit_phase[t_q] + np.pi,
+                        shape="gaussian_square",
+                        amp=cr_amp,
+                        risefall_dt=16,
+                    )
+                )
+
+            else:
+                half_dur = dur_dt // 2
+                self._append_event(
+                    ChannelEvent(
+                        channel=f"u({c_q},{t_q})",
+                        start_dt=start_dt,
+                        duration_dt=half_dur,
+                        op_name=f"{op.name}_cr+",
+                        qubits=q_indices,
+                        frame_phase_rad=qubit_phase[t_q],
+                        shape="gaussian_square",
+                        amp=cr_amp,
+                        risefall_dt=16,
+                    )
+                )
+
+                self._append_event(
+                    ChannelEvent(
+                        channel=f"u({c_q},{t_q})",
+                        start_dt=start_dt + half_dur,
+                        duration_dt=dur_dt - half_dur,
+                        op_name=f"{op.name}_cr-",
+                        qubits=q_indices,
+                        frame_phase_rad=qubit_phase[t_q] + np.pi,
+                        shape="gaussian_square",
+                        amp=cr_amp,
+                        risefall_dt=16,
+                    )
+                )
+
         elif op.name == "measure":
             q0 = q_indices[0]
             self._append_event(
@@ -609,6 +611,36 @@ class TargetWaveformSimulator:
         wave = np.zeros(length_dt, dtype=np.complex128)
         phase_trace = np.zeros(length_dt, dtype=np.float64)
 
+        # Resolve continuous phase tracking
+        if channel.startswith("d") or channel.startswith("m"):
+            try:
+                q_idx = int(channel[1:])
+            except ValueError:
+                q_idx = 0
+            phase_hist = self.phase_history.get(q_idx, [(0, 0.0)])
+        elif channel.startswith("u"):
+            try:
+                q_idx = int(channel.split(",")[-1].strip(")"))
+            except ValueError:
+                q_idx = 0
+            phase_hist = self.phase_history.get(q_idx, [(0, 0.0)])
+        else:
+            phase_hist = [(0, 0.0)]
+
+        # Pre-fill phase_trace with piecewise constant frame phase
+        for i in range(len(phase_hist)):
+            t_change, phase_val = phase_hist[i]
+            t_next = (
+                phase_hist[i + 1][0]
+                if i + 1 < len(phase_hist)
+                else self.total_duration_dt + length_dt
+            )
+
+            w_start = max(start_dt, t_change)
+            w_stop = min(stop_dt, t_next)
+            if w_start < w_stop:
+                phase_trace[w_start - start_dt : w_stop - start_dt] = phase_val
+
         events = self.events_by_channel.get(channel, [])
         if not events:
             return WaveformSnippet(
@@ -620,8 +652,6 @@ class TargetWaveformSimulator:
                 phase_rad=phase_trace,
                 events=[],
             )
-
-        # Use cached starts for O(1) access, fallback to building if not cached
         starts = self._starts_by_channel.get(channel)
         if starts is None:
             starts = [e.start_dt for e in events]
@@ -641,8 +671,6 @@ class TargetWaveformSimulator:
             overlapping.append(ev)
             if ev.duration_dt == 0:
                 continue
-
-            # Compute slice indices inside the local snippet window
             w_start = max(start_dt, ev.start_dt)
             w_stop = min(stop_dt, ev_stop)
             sl = slice(w_start - start_dt, w_stop - start_dt)
@@ -659,11 +687,8 @@ class TargetWaveformSimulator:
                     t_local_dt, ev.duration_dt, ev.amp, ev.risefall_dt
                 )
             elif ev.shape == "virtual_z":
-                continue  # Zero-duration, no waveform
+                continue
             else:
-                # Unknown shape - warn but continue without waveform
-                import warnings
-
                 warnings.warn(
                     f"Unknown pulse shape '{ev.shape}' on channel {channel}, skipping",
                     UserWarning,
@@ -677,7 +702,6 @@ class TargetWaveformSimulator:
                 + ev.frame_phase_rad
             )
             wave[sl] += baseband * np.exp(1j * carrier_phase)
-            phase_trace[sl] = ev.frame_phase_rad
 
         return WaveformSnippet(
             channel=channel,
@@ -717,10 +741,6 @@ class TargetWaveformSimulator:
         str
             OpenQASM 3 string with pulse annotation pragmas
         """
-        from qiskit import qasm3
-
-        from qiskit_waveform_sim import PulseAnnotationSerializer
-
         handlers = {"pulse_sim.envelope": PulseAnnotationSerializer()}
         if annotation_handlers:
             handlers.update(annotation_handlers)

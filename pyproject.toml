@@ -4,15 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "qiskit-waveform-sim"
-version = "0.1.1"
-description = "Zero-bloat Classical Control Waveform Simulator & Interactive Pulse Sheet Viewer for Qiskit 2.5+"
+version = "0.1.2"
+description = "Zero-bloat Classical Control Waveform Simulator and Interactive Pulse Sheet Viewer"
 readme = "README.md"
 license = "Apache-2.0"
 authors = [
-    {name = "Qiskit Community", email = "qiskit@us.ibm.com"}
+    {name = "Pratul Deshpande", email = "pratul.deshpande06@gmail.com"}
 ]
 maintainers = [
-    {name = "Qiskit Waveform Sim Team", email = "qiskit-waveform-sim@example.com"}
+    {name = "Pratul Deshpande", email = "pratul.deshpande06@gmail.com"}
 ]
 keywords = [
     "qiskit",
@@ -20,7 +20,7 @@ keywords = [
     "waveform-simulation",
     "pulse-sheet",
     "quantum-control",
-    "ibm-quantum"
+    "openqasm"
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -28,11 +28,12 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Physics",
 ]
 requires-python = ">=3.11"
 dependencies = [
-    "qiskit>=2.5.0",
+    "qiskit>=1.0.0",
     "numpy>=1.24",
     "matplotlib>=3.7",
     "plotly>=5.18",
@@ -43,7 +44,6 @@ test = [
     "pytest>=7.4",
     "pytest-cov>=4.1",
     "pytest-xdist>=3.3",
-    "hypothesis>=6.8",
 ]
 dev = [
     "ruff>=0.1.0",
@@ -61,7 +61,6 @@ docs = [
 ]
 export = [
     "kaleido>=0.2",
-    "h5py>=3.0",
 ]
 
 [project.urls]

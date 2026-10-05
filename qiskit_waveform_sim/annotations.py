@@ -1,5 +1,5 @@
 """
-Pulse Envelope Annotations for Qiskit 2.5+.
+Pulse Envelope Annotations for Qiskit 2.0+.
 
 Provides custom Annotation subclasses for attaching parametric pulse specifications
 to BoxOp blocks, with full OpenQASM 3 and QPY serialization support.
@@ -169,7 +169,6 @@ class PulseAnnotationSerializer(OpenQASM3Serializer):
             "sigma_ratio": annotation.sigma_ratio,
             "risefall_dt": annotation.risefall_dt,
         }
-        # Use repr for valid Python literal that ast.literal_eval can parse
         return repr(payload)
 
     def load(self, namespace: str, payload: str) -> Annotation:

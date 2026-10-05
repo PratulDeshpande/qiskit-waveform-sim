@@ -3,29 +3,23 @@
 [![PyPI](https://img.shields.io/pypi/v/qiskit-waveform-sim.svg?cache=clear)](https://pypi.org/project/qiskit-waveform-sim/)
 [![Python](https://img.shields.io/pypi/pyversions/qiskit-waveform-sim.svg?cache=clear)](https://pypi.org/project/qiskit-waveform-sim/)
 [![License](https://img.shields.io/pypi/l/qiskit-waveform-sim.svg?cache=clear)](https://www.apache.org/licenses/LICENSE-2.0)
-[![Tests](https://github.com/PratulDeshpande/qiskit-waveform-sim/workflows/Tests/badge.svg)](https://github.com/PratulDeshpande/qiskit-waveform-sim/actions)
+[![Tests](https://github.com/PratulDeshpande/qiskit-waveform-sim/actions/workflows/tests.yml/badge.svg)](https://github.com/PratulDeshpande/qiskit-waveform-sim/actions)
 
-**Zero-bloat Classical Control Waveform Simulator & Interactive Pulse Sheet Viewer for Qiskit 2.5+**
+**Classical Control Waveform Simulator & Interactive Pulse Sheet Viewer**
 
-`qiskit-waveform-sim` bridges the post-Pulse waveform gap in Qiskit 2.5+ by providing a native, offline, lazy-evaluated waveform simulator that works directly with Qiskit's modern `Target`, `op_start_times`, `BoxOp`, fractional gates (`RX`, `RZZ`), and the new `qiskit.circuit.annotation.Annotation` API.
+`qiskit-waveform-sim` bridges the post-Pulse waveform gap in Qiskit by providing a native, offline, lazy-evaluated waveform simulator that works directly with Qiskit's modern `Target`, `op_start_times`, `BoxOp`, fractional gates (`RX`, `RZZ`), and the new `qiskit.circuit.annotation.Annotation` API.
 
----
+## Overview
 
-## The Problem
+`qiskit-waveform-sim` bridges the post-Pulse waveform gap in Qiskit by providing a native, offline, lazy-evaluated waveform simulator that works directly with Qiskit's modern `Target` and `QuantumCircuit` APIs.
 
-With Qiskit 2.0–2.5, IBM completed a major architectural overhaul:
-- Core circuit structures moved to Rust (`QkCircuit`, `QkTarget`)
-- `qiskit.pulse` module was deprecated and removed
-- `qiskit-dynamics` was archived (Oct 31, 2025)
+With the deprecation and removal of `qiskit.pulse` in Qiskit 2.0, users need a way to inspect scheduled waveforms. This package provides an **analytical envelope generator** that synthesizes waveforms directly from instruction durations and gate names, overriding hardware calibrations with idealized standard physics (DRAG, GaussianSquare).
 
-This created a **structural visibility gap**:
 | Tool | Offline? | Dynamic Circuits | Fractional Gates | Virtual-Z Tracking | Sample-Precise I/Q |
 |------|----------|------------------|------------------|--------------------|---------------------|
-| `qiskit.visualization.timeline` | ✅ | ❌ | ❌ | ❌ (markers only) | ❌ |
-| `qiskit-ibm-runtime` `CircuitSchedule` | ❌ (cloud only) | ✅ (server) | ❌ | ❌ | ❌ |
-| **qiskit-waveform-sim** | ✅ | ✅ | ✅ | ✅ Exact | ✅ Lazy/Windowed |
-
----
+| `qiskit.visualization.timeline` | Yes | No | No | No (markers only) | No |
+| `qiskit-ibm-runtime` `CircuitSchedule` | No (cloud only) | Yes (server) | No | No | No |
+| **qiskit-waveform-sim** | Yes | Yes | Yes | Yes Exact | Yes Lazy/Windowed |
 
 ## Features
 
@@ -91,7 +85,7 @@ show_iq_oscilloscope(sim, "d0", start_dt=0, length_dt=1000, interactive=True)
 
 ### Custom Pulse Annotations (Unscheduled Preview)
 
-For custom pulse shapes, use `BoxOp` with `PulseEnvelopeAnnotation`. Note: scheduling with `BoxOp` is not yet supported in Qiskit 2.5's transpiler. Use the unscheduled circuit for OpenQASM 3 export and manual waveform compilation.
+For custom pulse shapes, use `BoxOp` with `PulseEnvelopeAnnotation`. Note: scheduling with `BoxOp` is not yet supported in Qiskit 2.0's transpiler. Use the unscheduled circuit for OpenQASM 3 export and manual waveform compilation.
 
 ```python
 from qiskit_waveform_sim import PulseEnvelopeAnnotation, PulseAnnotationSerializer
@@ -122,37 +116,26 @@ print(qasm3_str)
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    qiskit-waveform-sim                          │
-├─────────────────────────────────────────────────────────────────┤
-│  Input: Scheduled QuantumCircuit + Target                       │
-├─────────────────────────────────────────────────────────────────┤
-│  Pillar 1: Target Parametric Binding                            │
-│  ┌───────────────────────────────────────────────────────────┐  │
-│  │ • sx/x → DRAG envelope (σ = D/4, β leakage suppression)  │  │
-│  │ • rx(θ) → DRAG with A(θ) = A_π · (θ/π)                   │  │
-│  │ • ecr/cx/rzz → GaussianSquare on ControlChannel          │  │
-│  │ • measure → GaussianSquare on MeasureChannel + Acquire   │  │
-│  └───────────────────────────────────────────────────────────┘  │
-│  Pillar 2: PulseAnnotation Override (OpenQASM3 + QPY)          │
-│  ┌───────────────────────────────────────────────────────────┐  │
-│  │ @pulse_sim.drag(amp=0.5, beta=0.1, σ_ratio=0.25)         │  │
-│  │ box { sx q[0]; }                                          │  │
-│  └───────────────────────────────────────────────────────────┘  │
-├─────────────────────────────────────────────────────────────────┤
-│  Engine: FrameTracker + AnalyticalEnvelopes + Interval Indexing │
-│  ┌───────────────────────────────────────────────────────────┐  │
-│  │ • Virtual-Z: φ_q(t⁺) = φ_q(t⁻) - λ                       │  │
-│  │ • CR phase-locked to target qubit frame φ_t              │  │
-│  │ • I(t) + iQ(t) = Ω_env(t) · e^{i(2πf_IF t + φ_q)}        │  │
-│  │ • Binary search over ChannelEvent start_dt (O(log N))    │  │
-│  └───────────────────────────────────────────────────────────┘  │
-├─────────────────────────────────────────────────────────────────┤
-│  Output: WaveformSnippet(channel, time_ns, wave=I+iQ, phase)   │
-│  Visualization: Pulse Sheet (Plotly/HTML) + I/Q Oscilloscope   │
-└─────────────────────────────────────────────────────────────────┘
-```
+**Input:** Scheduled `QuantumCircuit` + `Target`
+
+**Pillar 1: Target Parametric Binding**
+- `sx`/`x` → DRAG envelope (σ = D/4, β leakage suppression)
+- `rx(θ)` → DRAG with A(θ) = A_π · (θ/π)
+- `ecr`/`cx`/`rzz` → GaussianSquare on ControlChannel
+- `measure` → GaussianSquare on MeasureChannel + Acquire
+
+**Pillar 2: PulseAnnotation Override (OpenQASM 3 + QPY)**
+- `@pulse_sim.drag(amp=0.5, beta=0.1, σ_ratio=0.25)`
+- `box { sx q[0]; }`
+
+**Engine: FrameTracker + AnalyticalEnvelopes + Interval Indexing**
+- Virtual-Z: φ_q(t⁺) = φ_q(t⁻) - λ
+- CR phase-locked to target qubit frame φ_t
+- I(t) + iQ(t) = Ω_env(t) · e^{i(2πf_IF t + φ_q)}
+- Binary search over ChannelEvent start_dt (O(log N))
+
+**Output:** `WaveformSnippet(channel, time_ns, wave=I+iQ, phase)`
+**Visualization:** Pulse Sheet (Plotly/HTML) + I/Q Oscilloscope
 
 ---
 
@@ -189,19 +172,10 @@ If you use `qiskit-waveform-sim` in your research, please cite:
 
 ```bibtex
 @software{qiskit_waveform_sim,
-  author       = {Qiskit Community},
-  title        = {qiskit-waveform-sim: Classical Control Waveform Simulator for Qiskit 2.5+},
+  author       = {Pratul Deshpande},
+  title        = {qiskit-waveform-sim: Classical Control Waveform Simulator},
   year         = {2026},
   url          = {https://github.com/PratulDeshpande/qiskit-waveform-sim},
-  version      = {0.1.0},
-  doi          = {10.5281/zenodo.XXXXXXX}
+  version      = {0.1.2}
 }
 ```
-
----
-
-## Acknowledgments
-
-- IBM Quantum team for Qiskit 2.x architecture and `Annotation` API
-- Zurich Instruments for LabOne Q `OutputSimulator` architectural inspiration
-- Qiskit Advocates and Unitary Foundation for ecosystem support

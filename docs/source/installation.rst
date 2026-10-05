@@ -39,7 +39,7 @@ Install from Source
 
 .. code-block:: bash
 
-   git clone https://github.com/Qiskit/qiskit-waveform-sim
+   git clone https://github.com/PratulDeshpande/qiskit-waveform-sim
    cd qiskit-waveform-sim
    pip install -e ".[dev,test,docs]"
 

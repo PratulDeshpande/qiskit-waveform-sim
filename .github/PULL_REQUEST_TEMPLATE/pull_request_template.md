@@ -77,7 +77,7 @@ body:
       description: If this is a breaking change, describe the migration path
       placeholder: |
         - Changed `TargetWaveformSimulator.compile()` signature
-        - Migration: use `compile_unscheduled()` for BoxOp circuits
+        - Migration: `compile_unscheduled()` removed; only `compile()` with scheduled circuits supported
     validations:
       required: false
   - type: checkboxes

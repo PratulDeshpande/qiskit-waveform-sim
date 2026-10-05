@@ -4,7 +4,7 @@ We welcome contributions! This guide will help you get started.
 
 ## Code of Conduct
 
-This project follows the [Qiskit Code of Conduct](https://github.com/Qiskit/qiskit/blob/main/CODE_OF_CONDUCT.md).
+This project follows our [Code of Conduct](CODE_OF_CONDUCT.md).
 By participating, you agree to uphold this code.
 
 ## How to Contribute
@@ -27,7 +27,7 @@ By participating, you agree to uphold this code.
 ### Development Setup
 
 ```bash
-git clone https://github.com/Qiskit/qiskit-waveform-sim
+git clone https://github.com/PratulDeshpande/qiskit-waveform-sim
 cd qiskit-waveform-sim
 pip install -e ".[dev,test,docs]"
 pre-commit install
@@ -111,4 +111,3 @@ implementation plan. Major changes should reference these documents.
 
 * Open a GitHub Discussion for questions
 * Check existing issues and PRs
-* Join the Qiskit Slack (#ecosystem channel)

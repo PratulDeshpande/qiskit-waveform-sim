@@ -1,7 +1,7 @@
 Quickstart
 ==========
 
-This guide shows you how to go from a Qiskit 2.5 scheduled circuit to 
+This guide shows you how to go from a Qiskit 2.0 scheduled circuit to 
 sample-precise I/Q waveforms and interactive pulse sheets in minutes.
 
 Prerequisites
@@ -85,7 +85,7 @@ Basic Workflow
 Custom Pulse Annotations
 ------------------------
 
-Attach custom pulse shapes to specific gates using Qiskit 2.5's ``BoxOp`` and ``Annotation`` API:
+Attach custom pulse shapes to specific gates using Qiskit 2.0's ``BoxOp`` and ``Annotation`` API:
 
 .. code-block:: python
 
