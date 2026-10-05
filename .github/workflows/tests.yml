@@ -40,14 +40,7 @@ jobs:
         run: |
           pytest -v tests/ --tb=short -q
 
-      - name: Upload coverage
-        uses: codecov/codecov-action@v4
-        if: always()
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./coverage.xml
-          flags: unittests
-          name: codecov-${{ matrix.python-version }}-${{ matrix.qiskit-version }}
+
 
   lint:
     name: Lint & Type Check
