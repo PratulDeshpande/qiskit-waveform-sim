@@ -60,7 +60,7 @@ docs = [
     "ipykernel>=6.0",
 ]
 export = [
-    "kaleido>=0.2",
+    "kaleido>=1.4.0",
 ]
 
 [project.urls]
