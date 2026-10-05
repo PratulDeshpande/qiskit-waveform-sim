@@ -70,6 +70,7 @@ def main():
     print("Saved static I/Q waveforms to iq_waveforms_static.png")
 
     # Phase tracking
+
     fig3 = plot_phase_tracking(sim, figsize=(12, 4))
     fig3.savefig("phase_tracking_static.png", dpi=150, bbox_inches="tight")
     print("Saved static phase tracking to phase_tracking_static.png")

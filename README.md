@@ -46,7 +46,7 @@ cd qiskit-waveform-sim
 pip install -e ".[dev,test,docs]"
 ```
 
-Requires Python 3.11+ and Qiskit 2.0+.
+Requires Python 3.11+ and Qiskit 1.0+.
 
 ---
 
