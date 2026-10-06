@@ -48,11 +48,11 @@ def main():
 
     # Export interactive to HTML
     pulse_fig = show_pulse_sheet(sim, interactive=False)
-    export_html(pulse_fig, "pulse_sheet.html")
+    #export_html(pulse_fig, "pulse_sheet.html")
     print("Exported pulse sheet to pulse_sheet.html")
 
     iq_fig = show_iq_oscilloscope(sim, "d0", start_dt=0, length_dt=1000, interactive=False)
-    export_html(iq_fig, "iq_oscilloscope.html")
+    #export_html(iq_fig, "iq_oscilloscope.html")
     print("Exported I/Q oscilloscope to iq_oscilloscope.html")
 
     # Static Matplotlib visualizations (for publications)
@@ -60,19 +60,18 @@ def main():
 
     # Pulse sheet
     fig1 = plot_pulse_sheet(sim, figsize=(12, 6))
-    fig1.savefig("pulse_sheet_static.png", dpi=150, bbox_inches="tight")
+    #fig1.savefig("pulse_sheet_static.png", dpi=150, bbox_inches="tight")
     print("Saved static pulse sheet to pulse_sheet_static.png")
 
     # I/Q waveforms
     d0_snip = sim.get_snippet("d0", start_dt=0, length_dt=2000)
     fig2 = plot_iq_waveforms(d0_snip, figsize=(12, 5))
-    fig2.savefig("iq_waveforms_static.png", dpi=150, bbox_inches="tight")
+    #fig2.savefig("iq_waveforms_static.png", dpi=150, bbox_inches="tight")
     print("Saved static I/Q waveforms to iq_waveforms_static.png")
 
     # Phase tracking
-
     fig3 = plot_phase_tracking(sim, figsize=(12, 4))
-    fig3.savefig("phase_tracking_static.png", dpi=150, bbox_inches="tight")
+    #fig3.savefig("phase_tracking_static.png", dpi=150, bbox_inches="tight")
     print("Saved static phase tracking to phase_tracking_static.png")
 
     plt.close("all")

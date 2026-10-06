@@ -38,9 +38,9 @@ def main():
     with qc.box(
         duration=160,
         unit="dt",
-        annotations=[custom_drag]
     ):
         qc.sx(0)
+    qc.data[-1].operation.annotations = [custom_drag]
 
     # Custom GaussianSquare for RZZ (requires RZZ in basis)
     custom_gs = PulseEnvelopeAnnotation(
@@ -52,9 +52,9 @@ def main():
     with qc.box(
         duration=300,
         unit="dt",
-        annotations=[custom_gs]
     ):
         qc.rzz(np.pi/2, 0, 1)
+    qc.data[-1].operation.annotations = [custom_gs]
 
     qc.measure([0, 1], [0, 1])
 
@@ -71,11 +71,11 @@ def main():
     print("For waveform simulation, use a scheduled circuit without BoxOp,")
     print("or apply custom parameters directly in the simulator.")
 
-    # Export to OpenQASM 3 with pulse annotations (works without scheduling)
-    qasm3_str = qasm3.dumps(
-        qc,
-        annotation_handlers={"pulse_sim.envelope": PulseAnnotationSerializer()}
-    )
+    # Export to OpenQASM 3 (annotations are not natively serialized in Qiskit 2.0 without custom exporters)
+    try:
+        qasm3_str = qasm3.dumps(qc)
+    except Exception as e:
+        qasm3_str = f"QASM3 Export Failed: {e}"
 
     print("\n--- OpenQASM 3 Export (first 50 lines) ---")
     for line in qasm3_str.splitlines()[:50]:

@@ -20,6 +20,39 @@ from qiskit_waveform_sim.visualization import (
 )
 
 
+# Check if Qiskit supports BoxOp annotations (added in Qiskit 2.1+)
+def _has_boxop_annotations():
+    """Check if Qiskit version supports BoxOp annotations."""
+    from qiskit.circuit import BoxOp
+
+    return (
+        hasattr(BoxOp, "annotations")
+        or "annotations" in BoxOp.__init__.__code__.co_varnames
+    )
+
+
+# Check if qasm3 supports annotation_handlers
+def _has_qasm3_annotation_handlers():
+    """Check if qasm3 supports annotation_handlers parameter."""
+    import inspect
+
+    from qiskit.qasm3 import Exporter
+
+    return "annotation_handlers" in inspect.signature(Exporter.__init__).parameters
+
+
+@pytest.fixture
+def has_boxop_annotations():
+    """Fixture indicating if BoxOp annotations are supported."""
+    return _has_boxop_annotations()
+
+
+@pytest.fixture
+def has_qasm3_annotation_handlers():
+    """Fixture indicating if qasm3 annotation_handlers are supported."""
+    return _has_qasm3_annotation_handlers()
+
+
 class TestFullWorkflow:
     """Integration tests for complete workflows."""
 
@@ -63,8 +96,10 @@ class TestFullWorkflow:
         assert len(pulse_fig.layout.shapes) > 0
         assert len(iq_fig.data) > 0
 
-    def test_custom_annotation_attachment(self):
+    def test_custom_annotation_attachment(self, has_boxop_annotations):
         """Test custom pulse annotation attachment to BoxOp (no scheduling required)."""
+        if not has_boxop_annotations:
+            pytest.skip("BoxOp annotations not supported in this Qiskit version")
         from qiskit_waveform_sim import PulseEnvelopeAnnotation
 
         qc = QuantumCircuit(2)
@@ -88,8 +123,10 @@ class TestFullWorkflow:
         assert len(box_op.annotations) == 1
         assert box_op.annotations[0] == custom_drag
 
-    def test_custom_annotation_multiple_boxops(self):
+    def test_custom_annotation_multiple_boxops(self, has_boxop_annotations):
         """Test multiple BoxOps with different annotations."""
+        if not has_boxop_annotations:
+            pytest.skip("BoxOp annotations not supported in this Qiskit version")
         from qiskit_waveform_sim import PulseEnvelopeAnnotation
 
         qc = QuantumCircuit(2)
@@ -180,8 +217,14 @@ class TestFullWorkflow:
         # May have different structure depending on backend
         assert len(cr_events) > 0
 
-    def test_openqasm3_export_with_annotations(self):
+    def test_openqasm3_export_with_annotations(
+        self, has_boxop_annotations, has_qasm3_annotation_handlers
+    ):
         """Test OpenQASM 3 export with pulse annotations (no scheduling required)."""
+        if not has_boxop_annotations or not has_qasm3_annotation_handlers:
+            pytest.skip(
+                "BoxOp annotations or qasm3 annotation_handlers not supported in this Qiskit version"
+            )
         from qiskit import qasm3
 
         from qiskit_waveform_sim import (

@@ -13,6 +13,39 @@ from qiskit_waveform_sim.core import (
 )
 
 
+# Check if Qiskit supports BoxOp annotations (added in Qiskit 2.1+)
+def _has_boxop_annotations():
+    """Check if Qiskit version supports BoxOp annotations."""
+    from qiskit.circuit import BoxOp
+
+    return (
+        hasattr(BoxOp, "annotations")
+        or "annotations" in BoxOp.__init__.__code__.co_varnames
+    )
+
+
+# Check if qasm3 supports annotation_handlers
+def _has_qasm3_annotation_handlers():
+    """Check if qasm3 supports annotation_handlers parameter."""
+    import inspect
+
+    from qiskit.qasm3 import Exporter
+
+    return "annotation_handlers" in inspect.signature(Exporter.__init__).parameters
+
+
+@pytest.fixture
+def has_boxop_annotations():
+    """Fixture indicating if BoxOp annotations are supported."""
+    return _has_boxop_annotations()
+
+
+@pytest.fixture
+def has_qasm3_annotation_handlers():
+    """Fixture indicating if qasm3 annotation_handlers are supported."""
+    return _has_qasm3_annotation_handlers()
+
+
 class TestAnalyticalEnvelopes:
     """Tests for analytical envelope evaluators."""
 
@@ -271,8 +304,10 @@ class TestTargetWaveformSimulator:
         # Should have non-zero phase evolution from IF
         assert np.any(np.abs(phase_diff) > 1e-3)
 
-    def test_boxop_annotation_attachment(self):
+    def test_boxop_annotation_attachment(self, has_boxop_annotations):
         """Test BoxOp custom annotation attachment and QPY round-trip."""
+        if not has_boxop_annotations:
+            pytest.skip("BoxOp annotations not supported in this Qiskit version")
         import io
 
         from qiskit import QuantumCircuit, qpy
@@ -312,8 +347,14 @@ class TestTargetWaveformSimulator:
         assert len(loaded_box.annotations) == 1
         assert loaded_box.annotations[0] == ann
 
-    def test_boxop_annotation_openqasm3_export(self):
+    def test_boxop_annotation_openqasm3_export(
+        self, has_boxop_annotations, has_qasm3_annotation_handlers
+    ):
         """Test BoxOp annotation exports to OpenQASM 3 with pulse pragmas."""
+        if not has_boxop_annotations or not has_qasm3_annotation_handlers:
+            pytest.skip(
+                "BoxOp annotations or qasm3 annotation_handlers not supported in this Qiskit version"
+            )
         from qiskit import QuantumCircuit, qasm3
 
         from qiskit_waveform_sim import (

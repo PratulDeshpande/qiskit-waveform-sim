@@ -490,7 +490,7 @@ class TargetWaveformSimulator:
                         duration_dt=cr_dur,
                         op_name=f"{op.name}_cr+",
                         qubits=q_indices,
-                        frame_phase_rad=qubit_phase[t_q],
+                        frame_phase_rad=qubit_phase[c_q],
                         shape="gaussian_square",
                         amp=cr_amp,
                         risefall_dt=16,
@@ -520,7 +520,7 @@ class TargetWaveformSimulator:
                         duration_dt=dur_dt - cr_dur - x_dur,
                         op_name=f"{op.name}_cr-",
                         qubits=q_indices,
-                        frame_phase_rad=qubit_phase[t_q] + np.pi,
+                        frame_phase_rad=qubit_phase[c_q] + np.pi,
                         shape="gaussian_square",
                         amp=cr_amp,
                         risefall_dt=16,
@@ -536,7 +536,7 @@ class TargetWaveformSimulator:
                         duration_dt=half_dur,
                         op_name=f"{op.name}_cr+",
                         qubits=q_indices,
-                        frame_phase_rad=qubit_phase[t_q],
+                        frame_phase_rad=qubit_phase[c_q],
                         shape="gaussian_square",
                         amp=cr_amp,
                         risefall_dt=16,
@@ -550,7 +550,7 @@ class TargetWaveformSimulator:
                         duration_dt=dur_dt - half_dur,
                         op_name=f"{op.name}_cr-",
                         qubits=q_indices,
-                        frame_phase_rad=qubit_phase[t_q] + np.pi,
+                        frame_phase_rad=qubit_phase[c_q] + np.pi,
                         shape="gaussian_square",
                         amp=cr_amp,
                         risefall_dt=16,
@@ -741,7 +741,20 @@ class TargetWaveformSimulator:
         str
             OpenQASM 3 string with pulse annotation pragmas
         """
-        handlers = {"pulse_sim.envelope": PulseAnnotationSerializer()}
-        if annotation_handlers:
-            handlers.update(annotation_handlers)
-        return qasm3.dumps(scheduled_qc, annotation_handlers=handlers)  # type: ignore
+        # Check if qasm3 supports annotation_handlers (added in Qiskit 2.1+)
+        import inspect
+
+        from qiskit.qasm3 import Exporter
+
+        supports_annotation_handlers = (
+            "annotation_handlers" in inspect.signature(Exporter.__init__).parameters
+        )
+
+        if supports_annotation_handlers:
+            handlers = {"pulse_sim.envelope": PulseAnnotationSerializer()}
+            if annotation_handlers:
+                handlers.update(annotation_handlers)
+            return qasm3.dumps(scheduled_qc, annotation_handlers=handlers)  # type: ignore[no-any-return]
+        else:
+            # Fallback: export without annotation handlers
+            return qasm3.dumps(scheduled_qc)  # type: ignore[no-any-return]

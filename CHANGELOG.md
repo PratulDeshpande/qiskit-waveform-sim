@@ -37,9 +37,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **QPY Round-trip**: Proper annotation_factories + as_qpy() usage
 
 ### Dependencies
-- Minimum: qiskit>=2.5.0, numpy>=1.24, matplotlib>=3.7, plotly>=5.18
+- Minimum: qiskit>=1.0.0,<3.0.0, numpy>=1.24, matplotlib>=3.7, plotly>=5.18
 - Removed: pydantic (unused)
-- Optional: kaleido (static Plotly export), h5py (HDF5 export)
+- Optional: kaleido (static Plotly export)
+
+### Fixed
+- **annotations.py**: Fixed Qiskit Annotation import with try/except for 1.x/2.x compatibility
+- **CR Phase Tracking**: Cross-resonance drive now uses control qubit frame phase (correct physics)
+- **Version Constraint**: Honest qiskit>=1.0.0,<3.0.0 (only qasm3/Annotation are 2.x specific)
 
 ### Documentation
 - Sphinx documentation with 3 Jupyter tutorials

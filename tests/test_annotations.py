@@ -12,6 +12,39 @@ from qiskit_waveform_sim.annotations import (
 )
 
 
+# Check if Qiskit supports BoxOp annotations (added in Qiskit 2.1+)
+def _has_boxop_annotations():
+    """Check if Qiskit version supports BoxOp annotations."""
+    from qiskit.circuit import BoxOp
+
+    return (
+        hasattr(BoxOp, "annotations")
+        or "annotations" in BoxOp.__init__.__code__.co_varnames
+    )
+
+
+# Check if qasm3 supports annotation_handlers
+def _has_qasm3_annotation_handlers():
+    """Check if qasm3 supports annotation_handlers parameter."""
+    import inspect
+
+    from qiskit.qasm3 import Exporter
+
+    return "annotation_handlers" in inspect.signature(Exporter.__init__).parameters
+
+
+@pytest.fixture
+def has_boxop_annotations():
+    """Fixture indicating if BoxOp annotations are supported."""
+    return _has_boxop_annotations()
+
+
+@pytest.fixture
+def has_qasm3_annotation_handlers():
+    """Fixture indicating if qasm3 annotation_handlers are supported."""
+    return _has_qasm3_annotation_handlers()
+
+
 class TestPulseEnvelopeAnnotation:
     """Tests for PulseEnvelopeAnnotation."""
 
@@ -181,10 +214,12 @@ class TestPulseAnnotationSerializer:
 
 
 class TestAnnotationIntegration:
-    """Integration tests with Qiskit BoxOp."""
+    """Integration tests with Qiskit BoxOp (skipped if API not available)."""
 
-    def test_attach_to_boxop(self):
+    def test_attach_to_boxop(self, has_boxop_annotations):
         """Test attaching annotation to BoxOp."""
+        if not has_boxop_annotations:
+            pytest.skip("BoxOp annotations not supported in this Qiskit version")
         from qiskit import QuantumCircuit
         from qiskit.circuit import BoxOp
 
@@ -201,8 +236,10 @@ class TestAnnotationIntegration:
         assert len(op.annotations) == 1
         assert op.annotations[0] == ann
 
-    def test_multiple_annotations(self):
+    def test_multiple_annotations(self, has_boxop_annotations):
         """Test multiple annotations on same BoxOp."""
+        if not has_boxop_annotations:
+            pytest.skip("BoxOp annotations not supported in this Qiskit version")
         from qiskit import QuantumCircuit
 
         qc = QuantumCircuit(1)
@@ -215,8 +252,10 @@ class TestAnnotationIntegration:
         op = qc.data[0].operation
         assert len(op.annotations) == 2
 
-    def test_qpy_roundtrip(self):
+    def test_qpy_roundtrip(self, has_boxop_annotations):
         """Test QPY serialization round-trip with annotations."""
+        if not has_boxop_annotations:
+            pytest.skip("BoxOp annotations not supported in this Qiskit version")
         import io
 
         from qiskit import QuantumCircuit, qpy
