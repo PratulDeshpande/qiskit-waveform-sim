@@ -6,7 +6,10 @@ import numpy as np
 import pytest
 from qiskit import QuantumCircuit
 from qiskit.providers.fake_provider import GenericBackendV2
-from qiskit.transpiler import generate_preset_pass_manager
+try:
+    from qiskit.transpiler.preset_passmanagers import generate_preset_pass_manager
+except ImportError:
+    from qiskit.transpiler import generate_preset_pass_manager
 
 from qiskit_waveform_sim import (
     TargetWaveformSimulator,
@@ -23,12 +26,14 @@ from qiskit_waveform_sim.visualization import (
 # Check if Qiskit supports BoxOp annotations (added in Qiskit 2.1+)
 def _has_boxop_annotations():
     """Check if Qiskit version supports BoxOp annotations."""
-    from qiskit.circuit import BoxOp
-
-    return (
-        hasattr(BoxOp, "annotations")
-        or "annotations" in BoxOp.__init__.__code__.co_varnames
-    )
+    try:
+        from qiskit.circuit import BoxOp
+        return (
+            hasattr(BoxOp, "annotations")
+            or "annotations" in BoxOp.__init__.__code__.co_varnames
+        )
+    except ImportError:
+        return False
 
 
 # Check if qasm3 supports annotation_handlers

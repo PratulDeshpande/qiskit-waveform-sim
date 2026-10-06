@@ -15,12 +15,14 @@ from qiskit_waveform_sim.annotations import (
 # Check if Qiskit supports BoxOp annotations (added in Qiskit 2.1+)
 def _has_boxop_annotations():
     """Check if Qiskit version supports BoxOp annotations."""
-    from qiskit.circuit import BoxOp
-
-    return (
-        hasattr(BoxOp, "annotations")
-        or "annotations" in BoxOp.__init__.__code__.co_varnames
-    )
+    try:
+        from qiskit.circuit import BoxOp
+        return (
+            hasattr(BoxOp, "annotations")
+            or "annotations" in BoxOp.__init__.__code__.co_varnames
+        )
+    except ImportError:
+        return False
 
 
 # Check if qasm3 supports annotation_handlers

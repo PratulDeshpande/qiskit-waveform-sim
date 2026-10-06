@@ -14,7 +14,11 @@ from typing import Any
 
 import numpy as np
 from qiskit import QuantumCircuit, qasm3
-from qiskit.circuit import BoxOp
+try:
+    from qiskit.circuit import BoxOp
+except ImportError:
+    class BoxOp:
+        pass
 from qiskit.transpiler import Target
 
 from qiskit_waveform_sim import PulseAnnotationSerializer
