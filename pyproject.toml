@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "qiskit-waveform-sim"
-version = "0.1.6"
+version = "0.1.7"
 description = "Zero-bloat Classical Control Waveform Simulator and Interactive Pulse Sheet Viewer"
 readme = "README.md"
 license = { file = "LICENSE" }

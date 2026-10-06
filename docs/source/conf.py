@@ -4,8 +4,8 @@
 project = 'qiskit-waveform-sim'
 copyright = '2026, Pratul Deshpande'
 author = 'Pratul Deshpande'
-release = '0.1.6'
-version = '0.1.6'
+release = '0.1.7'
+version = '0.1.7'
 
 # -- General configuration ---------------------------------------------------
 extensions = [
