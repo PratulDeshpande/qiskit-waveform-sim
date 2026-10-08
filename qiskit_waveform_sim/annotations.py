@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 
 from qiskit.circuit.annotation import Annotation, OpenQASM3Serializer
 
+
 class PulseEnvelopeAnnotation(Annotation):
     """
     Custom Qiskit 2.x Annotation attaching parametric pulse specs to a BoxOp.
