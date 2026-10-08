@@ -13,21 +13,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     pass
 
-# Qiskit 2.x added qiskit.circuit.annotation.Annotation and OpenQASM3Serializer.
-# Use try/except for compatibility with Qiskit 1.x.
-try:
-    from qiskit.circuit.annotation import Annotation, OpenQASM3Serializer
-except ImportError:
-    # Qiskit < 2.0 fallback - define minimal base classes
-    class _AnnotationBase:
-        pass
-
-    class _OpenQASM3SerializerBase:
-        pass
-
-    Annotation = _AnnotationBase
-    OpenQASM3Serializer = _OpenQASM3SerializerBase
-
+from qiskit.circuit.annotation import Annotation, OpenQASM3Serializer
 
 class PulseEnvelopeAnnotation(Annotation):
     """

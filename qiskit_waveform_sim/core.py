@@ -418,7 +418,7 @@ class TargetWaveformSimulator:
         if len(q_indices) == 1 and op.name in ("sx", "x", "rx"):
             q0 = q_indices[0]
 
-            # Try to extract amplitude from Target calibration (Qiskit 1.x)
+            # Try to extract amplitude from Target calibration
             has_cal = False
             try:
                 if op.name in self.target and q_indices in self.target[op.name]:
