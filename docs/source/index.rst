@@ -15,6 +15,9 @@ It bridges the post-Pulse waveform gap created by Qiskit 2.0-2.5's architectural
 - **Interactive Visualization**: Plotly-based Pulse Sheet + synchronized I/Q Oscilloscope
 - **LabOne Q Compatible Architecture**: ``OutputSimulator.get_snippet()``-style API
 
+.. note::
+   **Analytical Envelope Philosophy**: ``qiskit-waveform-sim`` is designed for offline, deterministic control simulation. Rather than querying cloud-based calibration databases over the network, it synthesizes standardized, idealized physical pulse envelopes (such as DRAG with derivative leakage suppression and GaussianSquare with flat-top rise/fall pedestal corrections) derived directly from circuit gate names, parameters, and modern ``Target`` instruction durations.
+
 .. toctree::
    :maxdepth: 2
    :caption: Getting Started

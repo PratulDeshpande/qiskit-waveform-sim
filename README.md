@@ -15,6 +15,9 @@
 
 With the deprecation and removal of `qiskit.pulse` in Qiskit 2.0, users need a way to inspect scheduled waveforms. This package provides an **analytical envelope generator** that synthesizes waveforms directly from instruction durations and gate names, overriding hardware calibrations with idealized standard physics (DRAG, GaussianSquare).
 
+> [!NOTE]
+> **Analytical Envelope Philosophy**: `qiskit-waveform-sim` is designed for offline, deterministic control simulation. Rather than querying cloud-based calibration databases over the network, it synthesizes standardized, idealized physical pulse envelopes (such as DRAG with derivative leakage suppression and GaussianSquare with flat-top rise/fall pedestal corrections) derived directly from circuit gate names, parameters, and modern `Target` instruction durations.
+
 | Tool | Offline? | Dynamic Circuits | Fractional Gates | Virtual-Z Tracking | Sample-Precise I/Q |
 |------|----------|------------------|------------------|--------------------|---------------------|
 | `qiskit.visualization.timeline` | Yes | No | No | No (markers only) | No |

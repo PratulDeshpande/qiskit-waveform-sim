@@ -5,10 +5,12 @@ Tests for core waveform simulation engine.
 import numpy as np
 import pytest
 from qiskit import QuantumCircuit
+from qiskit.transpiler import generate_preset_pass_manager
 
 from qiskit_waveform_sim.core import (
     AnalyticalEnvelopes,
     ChannelEvent,
+    TargetWaveformSimulator,
     WaveformSnippet,
 )
 
@@ -243,6 +245,33 @@ class TestTargetWaveformSimulator:
         assert len(snippet.wave) == 100
         assert np.all(snippet.wave == 0)
         assert len(snippet.events) == 0
+
+    def test_get_snippet_invalid_bounds(self, compiled_simulator):
+        """Test that invalid bounds raise descriptive ValueErrors."""
+        with pytest.raises(ValueError, match="start_dt must be non-negative"):
+            compiled_simulator.get_snippet("d0", start_dt=-10, length_dt=100)
+
+        with pytest.raises(ValueError, match="length_dt must be positive"):
+            compiled_simulator.get_snippet("d0", start_dt=0, length_dt=0)
+
+        with pytest.raises(ValueError, match="length_dt must be positive"):
+            compiled_simulator.get_snippet("d0", start_dt=0, length_dt=-50)
+
+    def test_multi_qubit_measure(self, backend_2q):
+        """Test that measure instruction across multiple qubits creates events for all qubits."""
+        qc = QuantumCircuit(2, 2)
+        qc.measure([0, 1], [0, 1])
+
+        pm = generate_preset_pass_manager(
+            optimization_level=1, backend=backend_2q, scheduling_method="alap"
+        )
+        scheduled_qc = pm.run(qc)
+
+        sim = TargetWaveformSimulator(backend_2q.target).compile(scheduled_qc)
+        assert "m0" in sim.events_by_channel
+        assert "m1" in sim.events_by_channel
+        assert len(sim.events_by_channel["m0"]) == 1
+        assert len(sim.events_by_channel["m1"]) == 1
 
     def test_get_channels(self, compiled_simulator):
         """Test channel listing."""

@@ -8,7 +8,7 @@ Prerequisites
 -------------
 
 - Python 3.11+
-- Qiskit 2.0+ (``pip install qiskit>=2.0.0``)
+- Qiskit 2.5+ (``pip install "qiskit>=2.5.0,<3"``)
 - qiskit-waveform-sim (``pip install qiskit-waveform-sim``)
 
 Basic Workflow

@@ -558,20 +558,20 @@ class TargetWaveformSimulator:
                 )
 
         elif op.name == "measure":
-            q0 = q_indices[0]
-            self._append_event(
-                ChannelEvent(
-                    channel=f"m{q0}",
-                    start_dt=start_dt,
-                    duration_dt=dur_dt,
-                    op_name="measure",
-                    qubits=q_indices,
-                    frame_phase_rad=0.0,
-                    shape="gaussian_square",
-                    amp=0.35 + 0.0j,
-                    risefall_dt=24,
+            for q in q_indices:
+                self._append_event(
+                    ChannelEvent(
+                        channel=f"m{q}",
+                        start_dt=start_dt,
+                        duration_dt=dur_dt,
+                        op_name="measure",
+                        qubits=(q,),
+                        frame_phase_rad=0.0,
+                        shape="gaussian_square",
+                        amp=0.35 + 0.0j,
+                        risefall_dt=24,
+                    )
                 )
-            )
 
         return stop_dt
 
@@ -602,6 +602,11 @@ class TargetWaveformSimulator:
         WaveformSnippet
             Container with time array, complex waveform, phase trace, and overlapping events
         """
+        if start_dt < 0:
+            raise ValueError(f"start_dt must be non-negative, got {start_dt}")
+        if length_dt is not None and length_dt <= 0:
+            raise ValueError(f"length_dt must be positive, got {length_dt}")
+
         if length_dt is None:
             length_dt = max(1, self.total_duration_dt - start_dt)
         stop_dt = start_dt + length_dt

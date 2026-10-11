@@ -4,8 +4,8 @@ Installation
 Requirements
 ------------
 
-- **Python**: 3.11 or 3.12
-- **Qiskit**: 2.0.0 or later
+- **Python**: 3.11, 3.12, or 3.13
+- **Qiskit**: 2.5.0 or later (<3.0.0)
 - **NumPy**: 1.24 or later
 - **Matplotlib**: 3.7 or later
 - **Plotly**: 5.18 or later
@@ -80,11 +80,11 @@ Troubleshooting
 
 **Qiskit Version Conflicts**
 
-If you encounter version conflicts, ensure you have Qiskit 2.0+:
+If you encounter version conflicts, ensure you have Qiskit 2.5+:
 
 .. code-block:: bash
 
-   pip install --upgrade "qiskit>=2.0.0"
+   pip install --upgrade "qiskit>=2.5.0,<3"
 
 **Plotly/Kaleido Issues**
 
