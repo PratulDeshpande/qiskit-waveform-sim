@@ -4,8 +4,8 @@
 project = 'qiskit-waveform-sim'
 copyright = '2026, Pratul Deshpande'
 author = 'Pratul Deshpande'
-release = '0.1.7'
-version = '0.1.7'
+release = '0.1.8'
+version = '0.1.8'
 
 # -- General configuration ---------------------------------------------------
 extensions = [
@@ -41,7 +41,6 @@ napoleon_use_admonition_for_references = True
 intersphinx_mapping = {
     'python': ('https://docs.python.org/3', None),
     'numpy': ('https://numpy.org/doc/stable/', None),
-    'qiskit': ('https://qiskit.org/documentation/', None),
     'plotly': ('https://plotly.com/python-api-reference/', None),
 }
 

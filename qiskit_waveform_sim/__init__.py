@@ -25,7 +25,7 @@ from qiskit_waveform_sim.visualization import (
     show_pulse_sheet,
 )
 
-__version__ = "0.1.2"
+__version__ = "0.1.8"
 __all__ = [
     "TargetWaveformSimulator",
     "WaveformSnippet",

@@ -65,7 +65,13 @@ jobs:
         run: |
           VERSION="${{ github.event.release.tag_name || inputs.version }}"
           VERSION="${VERSION#v}"
-          # Wait 30 seconds for PyPI to index the new release
-          sleep 30
-          pip install qiskit-waveform-sim==${VERSION}
-          python -c "import qiskit_waveform_sim; print('Version:', qiskit_waveform_sim.__version__); print('✅ Package installs correctly')"
+          echo "Verifying installation of qiskit-waveform-sim==${VERSION} from PyPI..."
+          for attempt in 1 2 3 4 5; do
+            echo "Attempt $attempt: checking package on PyPI..."
+            if pip install qiskit-waveform-sim==${VERSION}; then
+              break
+            fi
+            echo "Package not indexed yet; sleeping 20s..."
+            sleep 20
+          done
+          python -c "import qiskit_waveform_sim; print('Version:', qiskit_waveform_sim.__version__); assert qiskit_waveform_sim.__version__ == '${VERSION}'; print('✅ Package installs and version matches correctly')"

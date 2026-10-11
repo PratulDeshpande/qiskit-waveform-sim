@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.8] - 2026-10-12
+
+### Changed
+- **Qiskit Ecosystem Compliance ([Q03])**: Added `<3` major version upper-bound cap to Qiskit dependency (`qiskit>=2.5.0,<3`) in `pyproject.toml`.
+- **PEP 639 License Specification**: Updated build system to require `setuptools>=77.0`, declared SPDX expression `license = "Apache-2.0"`, specified `license-files = ["LICENSE"]`, and removed superseded Trove license classifier.
+- **CI Test Matrix**: Added Python 3.13 to GitHub Actions test matrix in parity with Qiskit Ecosystem validation.
+- **Documentation**: Modernized Sphinx intersphinx configuration and synchronized documentation release metadata.
+
 ## [0.1.7] - 2026-10-06
 
 ### Added
@@ -37,14 +45,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **QPY Round-trip**: Proper annotation_factories + as_qpy() usage
 
 ### Dependencies
-- Minimum: qiskit>=1.0.0,<3.0.0, numpy>=1.24, matplotlib>=3.7, plotly>=5.18
+- Minimum: qiskit>=2.5.0,<3.0.0, numpy>=1.24, matplotlib>=3.7, plotly>=5.18
 - Removed: pydantic (unused)
 - Optional: kaleido (static Plotly export)
-
-### Fixed
-- **annotations.py**: Fixed Qiskit Annotation import with try/except for 1.x/2.x compatibility
-- **CR Phase Tracking**: Cross-resonance drive now uses control qubit frame phase (correct physics)
-- **Version Constraint**: Honest qiskit>=1.0.0,<3.0.0 (only qasm3/Annotation are 2.x specific)
 
 ### Documentation
 - Sphinx documentation with 3 Jupyter tutorials

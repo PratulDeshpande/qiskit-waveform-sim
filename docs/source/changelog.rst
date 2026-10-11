@@ -1,6 +1,23 @@
 Changelog
 =========
 
+Version 0.1.8 (2026-10-12)
+--------------------------
+
+* **Qiskit Ecosystem Compliance ([Q03])**: Added `<3` major version upper-bound cap to Qiskit dependency (`qiskit>=2.5.0,<3`).
+* **PEP 639 License Specification**: Adopted SPDX expression ``license = "Apache-2.0"`` and updated build system to require ``setuptools>=77.0``.
+* **Python 3.13 CI Support**: Added Python 3.13 to continuous integration test matrix.
+* **Sphinx & Intersphinx Modernization**: Removed dead ``qiskit.org`` intersphinx mapping to ensure robust documentation builds.
+
+Version 0.1.7 (2026-10-06)
+--------------------------
+
+* **DRAG Boundary Fix**: Q quadrature now vanishes at boundaries via windowed derivative.
+* **Delay Unit Conversion**: Proper handling of s, ms, us, ns, ps, and dt units.
+* **OpenQASM 3 Serialization**: Default PulseAnnotationSerializer for pulse_sim.envelope.
+* **Hardware Export**: NPZ flattening and CSV filename sanitization.
+* **QPY Round-trip**: Annotation factories and ``as_qpy()`` support.
+
 Version 0.1.0 (2026-10-04)
 --------------------------
 

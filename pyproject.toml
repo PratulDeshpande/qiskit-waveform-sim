@@ -1,13 +1,14 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=77.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "qiskit-waveform-sim"
-version = "0.1.7"
+version = "0.1.8"
 description = "Zero-bloat Classical Control Waveform Simulator and Interactive Pulse Sheet Viewer"
 readme = "README.md"
-license = { file = "LICENSE" }
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 authors = [
     {name = "Pratul Deshpande", email = "pratul.deshpande06@gmail.com"}
 ]
@@ -30,11 +31,10 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Physics",
-    "License :: OSI Approved :: Apache Software License",
 ]
 requires-python = ">=3.11"
 dependencies = [
-    "qiskit>=2.5.0",
+    "qiskit>=2.5.0,<3",
     "numpy>=1.24",
     "matplotlib>=3.7",
     "plotly>=5.18",
