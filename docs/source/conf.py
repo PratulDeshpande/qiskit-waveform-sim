@@ -17,15 +17,20 @@ extensions = [
     'sphinx.ext.viewcode',
     'myst_parser',
     'nbsphinx',
+    'qiskit_sphinx_theme',
 ]
 
 templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store', '**.ipynb_checkpoints']
 
 # -- Options for HTML output -------------------------------------------------
-html_theme = 'sphinx_rtd_theme'
+html_theme = 'qiskit-ecosystem'
 html_static_path = ['_static']
 html_title = f'{project} v{version}'
+
+html_theme_options = {
+    "sidebar_qiskit_ecosystem_member": True,
+}
 
 # -- Napoleon settings -------------------------------------------------------
 napoleon_google_docstring = True
