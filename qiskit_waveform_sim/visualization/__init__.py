@@ -15,6 +15,7 @@ import plotly.io as pio
 from plotly.subplots import make_subplots
 
 from qiskit_waveform_sim.core import TargetWaveformSimulator
+from qiskit_waveform_sim.visualization._style import event_color
 from qiskit_waveform_sim.visualization.matplotlib import (
     plot_iq_waveforms,
     plot_multi_channel_iq,
@@ -87,26 +88,39 @@ def create_pulse_sheet(
         subplot_titles=[f"<b>{ch}</b>" for ch in display_channels],
         row_heights=[1.0 / n_channels] * n_channels,
     )
-    op_colors = {
-        "drag": "#1f77b4",  # Blue for single-qubit drives
-        "gaussian_square": "#2ca02c",  # Green for two-qubit/measure
-        "virtual_z": "#ff7f0e",  # Orange for virtual Z
-        "measure": "#d62728",  # Red for measure
-        "ecr_echo_x": "#9467bd",  # Purple for echo
-        "default": "#7f7f7f",  # Gray
-    }
-
     for row_idx, channel in enumerate(display_channels, 1):
-        events = sim.events_by_channel.get(channel, [])
-        if not events:
-            continue
-        visible_events = [
-            ev
-            for ev in events
-            if ev.start_dt + ev.duration_dt > t_start_dt and ev.start_dt < t_stop_dt
-        ]
+        for ev in sim.events_by_channel.get(channel, []):
+            if ev.duration_dt == 0:
+                # Zero-duration frame changes are drawn as markers, not blocks
+                if (
+                    ev.shape == "virtual_z"
+                    and config.show_phase_markers
+                    and t_start_dt <= ev.start_dt <= t_stop_dt
+                ):
+                    marker_ns = ev.start_dt * sim.dt * 1e9
+                    fig.add_shape(
+                        type="line",
+                        x0=marker_ns,
+                        x1=marker_ns,
+                        y0=0,
+                        y1=1,
+                        xref=f"x{row_idx}",
+                        yref=f"y{row_idx}",
+                        line={"color": "red", "width": 2, "dash": "dash"},
+                    )
+                    fig.add_annotation(
+                        x=marker_ns,
+                        y=1.05,
+                        xref=f"x{row_idx}",
+                        yref=f"y{row_idx}",
+                        text=f"φ={ev.frame_phase_rad:.2f}",
+                        showarrow=False,
+                        font={"size": 9, "color": "red"},
+                    )
+                continue
+            if ev.start_dt + ev.duration_dt <= t_start_dt or ev.start_dt >= t_stop_dt:
+                continue
 
-        for ev in visible_events:
             ev_start_ns = ev.start_dt * sim.dt * 1e9
             ev_stop_ns = (ev.start_dt + ev.duration_dt) * sim.dt * 1e9
             ev_start_ns = max(ev_start_ns, t_start_ns)
@@ -116,7 +130,7 @@ def create_pulse_sheet(
             if ev_duration_ns <= 0:
                 continue
 
-            color = op_colors.get(ev.shape, op_colors["default"])
+            color = event_color(ev)
             fig.add_shape(
                 type="rect",
                 x0=ev_start_ns,
@@ -131,7 +145,7 @@ def create_pulse_sheet(
                 layer="below",
             )
             label = ev.op_name
-            if config.show_annotations and ev.shape != "virtual_z":
+            if config.show_annotations:
                 label += f" (φ={ev.frame_phase_rad:.2f})"
 
             fig.add_annotation(
@@ -144,26 +158,6 @@ def create_pulse_sheet(
                 font={"size": 10, "color": "white"},
                 align="center",
             )
-            if ev.shape == "virtual_z" and config.show_phase_markers:
-                fig.add_shape(
-                    type="line",
-                    x0=ev_start_ns,
-                    x1=ev_start_ns,
-                    y0=0,
-                    y1=1,
-                    xref=f"x{row_idx}",
-                    yref=f"y{row_idx}",
-                    line={"color": "red", "width": 2, "dash": "dash"},
-                )
-                fig.add_annotation(
-                    x=ev_start_ns,
-                    y=1.05,
-                    xref=f"x{row_idx}",
-                    yref=f"y{row_idx}",
-                    text=f"φ={ev.frame_phase_rad:.2f}",
-                    showarrow=False,
-                    font={"size": 9, "color": "red"},
-                )
     fig.update_layout(
         title={
             "text": "Qiskit Waveform Simulator - Pulse Sheet",
@@ -220,9 +214,6 @@ def create_iq_oscilloscope(
         Interactive Plotly figure with I/Q waveforms
     """
     snippet = sim.get_snippet(channel, start_dt, length_dt)
-
-    if length_dt is None:
-        length_dt = len(snippet.wave)
 
     time_ns = snippet.time_ns
     wave = snippet.wave
@@ -467,15 +458,10 @@ def create_combined_view(
     config = config or PulseSheetConfig()
     snippet = sim.get_snippet(channel, start_dt, length_dt)
 
-    if length_dt is None:
-        length_dt = len(snippet.wave)
-
     time_ns = snippet.time_ns
     t_start_ns = time_ns[0]
     t_stop_ns = time_ns[-1]
-    config.time_window_ns = (t_start_ns, t_stop_ns)
 
-    # Simpler: create fresh combined figure
     channels = sim.get_channels()
     display_channels = channels[: config.max_channels]
     n_channels = len(display_channels)
@@ -490,15 +476,6 @@ def create_combined_view(
         + ["I (In-Phase)", "Q (Quadrature)", "Frame Phase (rad)"],
         row_heights=[0.6 / total_rows] * n_channels + [0.4 / total_rows] * 3,
     )
-    op_colors = {
-        "drag": "#1f77b4",
-        "gaussian_square": "#2ca02c",
-        "virtual_z": "#ff7f0e",
-        "measure": "#d62728",
-        "ecr_echo_x": "#9467bd",
-        "default": "#7f7f7f",
-    }
-
     for row_idx, ch in enumerate(display_channels, 1):
         events = sim.events_by_channel.get(ch, [])
         for ev in events:
@@ -513,7 +490,7 @@ def create_combined_view(
             if ev_stop_ns <= ev_start_ns:
                 continue
 
-            color = op_colors.get(ev.shape, op_colors["default"])
+            color = event_color(ev)
 
             fig.add_shape(
                 type="rect",
