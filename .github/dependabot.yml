@@ -18,6 +18,8 @@ updates:
       qiskit:
         patterns:
           - "qiskit*"
+        exclude-patterns:
+          - "qiskit-sphinx-theme"
         update-types:
           - "minor"
           - "patch"
@@ -28,9 +30,6 @@ updates:
           - "black*"
           - "mypy*"
           - "pre-commit*"
-          - "sphinx*"
-          - "nbsphinx*"
-          - "myst-parser*"
         update-types:
           - "minor"
           - "patch"
@@ -39,14 +38,13 @@ updates:
           - "sphinx*"
           - "nbsphinx*"
           - "myst-parser*"
-          - "sphinx-rtd-theme*"
+          - "qiskit-sphinx-theme*"
         update-types:
           - "minor"
           - "patch"
       export-deps:
         patterns:
           - "kaleido*"
-          - "h5py*"
         update-types:
           - "minor"
           - "patch"
