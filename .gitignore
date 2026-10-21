@@ -27,3 +27,7 @@ docs/_build/
 .venv
 venv/
 ENV/
+
+# Local tooling output
+graphify-out/
+.superpowers/
