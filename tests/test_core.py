@@ -652,3 +652,24 @@ def test_unit_conversion_for_delay_units(backend_2q, duration, unit, expected_dt
     sim = TargetWaveformSimulator(backend_2q.target).compile(_hand_scheduled(qc, [0]))
 
     assert sim.total_duration_dt == expected_dt
+
+
+def test_sized_box_gate_fits_after_leading_delay(backend_2q):
+    """A delay inside a fixed-duration box shortens the gate, never the box."""
+    qc = QuantumCircuit(1)
+    with qc.box(duration=400, unit="dt"):
+        qc.delay(100, 0)
+        qc.x(0)
+
+    sim = TargetWaveformSimulator(backend_2q.target).compile(_hand_scheduled(qc, [0]))
+
+    (ev,) = [e for e in sim.events_by_channel["d0"] if e.op_name == "x"]
+    assert (ev.start_dt, ev.duration_dt) == (100, 300)
+    assert sim.total_duration_dt == 400
+
+
+def test_default_cr_event_metadata_unchanged(compiled_simulator):
+    """Un-annotated CR events keep the pre-refactor sigma/beta metadata."""
+    cr = compiled_simulator.events_by_channel["u(0,1)"]
+
+    assert cr and all((e.sigma_dt, e.beta) == (16.0, 0.0) for e in cr)
