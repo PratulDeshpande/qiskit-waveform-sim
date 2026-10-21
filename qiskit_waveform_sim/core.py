@@ -18,8 +18,10 @@ from qiskit import QuantumCircuit, qasm3
 from qiskit.circuit import BoxOp
 from qiskit.transpiler import Target
 
-from qiskit_waveform_sim import PulseAnnotationSerializer
-from qiskit_waveform_sim.annotations import PulseEnvelopeAnnotation
+from qiskit_waveform_sim.annotations import (
+    PulseAnnotationSerializer,
+    PulseEnvelopeAnnotation,
+)
 
 
 @dataclass(frozen=True)
@@ -91,8 +93,10 @@ class AnalyticalEnvelopes:
         """
         DRAG (Derivative Removal by Adiabatic Gate) envelope with pedestal correction.
 
-        The Q quadrature is windowed by the normalized Gaussian to ensure
-        zero boundary conditions on both I and Q components.
+        The I quadrature is a pedestal-corrected Gaussian that is exactly zero at
+        the pulse edges. The Q quadrature is beta times its time derivative,
+        matching Qiskit's ``Drag`` definition; it is small but not exactly zero
+        at the edges.
 
         Parameters
         ----------
@@ -110,9 +114,8 @@ class AnalyticalEnvelopes:
         Returns
         -------
         np.ndarray
-            Complex baseband envelope Ω(t) = A[g_norm(t) - iβ d(g_norm)/dt]
-            with zero boundary conditions on both real and imaginary parts.
-            The Q quadrature is -β times the derivative of the I quadrature envelope.
+            Complex baseband envelope Ω(t) = A[g_norm(t) + iβ d(g_norm)/dt].
+            The Q quadrature is +β times the derivative of the I quadrature envelope.
         """
         if abs(amp) > 1.0 + 1e-12:
             raise ValueError(
@@ -295,7 +298,7 @@ class TargetWaveformSimulator:
         max_stop_dt = 0
 
         for inst, start_dt in zip(
-            scheduled_qc.data, scheduled_qc.op_start_times, strict=False
+            scheduled_qc.data, scheduled_qc.op_start_times, strict=True
         ):
             op = inst.operation
             q_indices = tuple(scheduled_qc.find_bit(q).index for q in inst.qubits)
@@ -325,42 +328,9 @@ class TargetWaveformSimulator:
         if op.name in ("rz", "barrier"):
             return 0
         if op.name == "delay":
-            # Handle Delay unit conversion: duration can be in s, ms, us, ns, ps, dt
-            dur = op.duration
-            unit = getattr(op, "unit", "dt")
-            if unit == "dt":
-                return int(dur)
-            elif unit == "s":
-                return int(round(dur / self.dt))
-            elif unit == "ms":
-                return int(round(dur * 1e-3 / self.dt))
-            elif unit == "us":
-                return int(round(dur * 1e-6 / self.dt))
-            elif unit == "ns":
-                return int(round(dur * 1e-9 / self.dt))
-            elif unit == "ps":
-                return int(round(dur * 1e-12 / self.dt))
-            else:
-                return int(dur)
-        if isinstance(op, BoxOp) and op.duration is not None:
-            # BoxOp duration may be in different units
-            if op.unit == "dt":
-                return int(op.duration)
-            elif op.unit == "s":
-                return int(round(op.duration / self.dt))
-            elif op.unit == "ms":
-                return int(round(op.duration * 1e-3 / self.dt))
-            elif op.unit == "us":
-                return int(round(op.duration * 1e-6 / self.dt))
-            elif op.unit == "ns":
-                return int(round(op.duration * 1e-9 / self.dt))
-            elif op.unit == "ps":
-                return int(round(op.duration * 1e-12 / self.dt))
-            elif op.unit == "expr":
-                # Stretch/Expr - cannot determine statically, use fallback
-                pass
-            else:
-                return int(op.duration)  # Assume dt
+            return self._to_dt(op.duration, getattr(op, "unit", "dt"))
+        if isinstance(op, BoxOp):
+            return self._box_duration_dt(op) or 0
         if op.name in self.target and q_indices in self.target[op.name]:
             props = self.target[op.name][q_indices]
             if props and props.duration is not None:
@@ -385,7 +355,6 @@ class TargetWaveformSimulator:
             "cx",
             "delay",
             "barrier",
-            "rz",
         ):
             warnings.warn(
                 f"Unknown operation '{op.name}' on qubits {q_indices}, using fallback duration of 160 dt",
@@ -443,21 +412,6 @@ class TargetWaveformSimulator:
 
         if len(q_indices) == 1 and op.name in ("sx", "x", "rx"):
             q0 = q_indices[0]
-
-            # Try to extract amplitude from Target calibration
-            has_cal = False
-            try:
-                if op.name in self.target and q_indices in self.target[op.name]:
-                    cal = getattr(self.target[op.name][q_indices], "calibration", None)
-                    if cal is not None:
-                        has_cal = True
-            except (KeyError, AttributeError):
-                pass
-
-            if has_cal:
-                # We could attempt to parse the ScheduleBlock here.
-                # For now, we note that it's uncalibrated analytical generation.
-                pass
 
             if override_ann is not None:
                 shape = override_ann.shape
@@ -828,20 +782,8 @@ class TargetWaveformSimulator:
         str
             OpenQASM 3 string with pulse annotation pragmas
         """
-        # Check if qasm3 supports annotation_handlers (added in Qiskit 2.1+)
-        import inspect
-
-        from qiskit.qasm3 import Exporter
-
-        supports_annotation_handlers = (
-            "annotation_handlers" in inspect.signature(Exporter.__init__).parameters
-        )
-
-        if supports_annotation_handlers:
-            handlers = {"pulse_sim.envelope": PulseAnnotationSerializer()}
-            if annotation_handlers:
-                handlers.update(annotation_handlers)
-            return qasm3.dumps(scheduled_qc, annotation_handlers=handlers)  # type: ignore[no-any-return]
-        else:
-            # Fallback: export without annotation handlers
-            return qasm3.dumps(scheduled_qc)  # type: ignore[no-any-return]
+        # annotation_handlers is available on every supported Qiskit (>= 2.5)
+        handlers = {"pulse_sim.envelope": PulseAnnotationSerializer()}
+        if annotation_handlers:
+            handlers.update(annotation_handlers)
+        return qasm3.dumps(scheduled_qc, annotation_handlers=handlers)  # type: ignore[no-any-return]
