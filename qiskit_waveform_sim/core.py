@@ -189,6 +189,10 @@ class AnalyticalEnvelopes:
         return amp * env
 
 
+# Operations that occupy time but legitimately emit no drive waveform
+_IDLE_OPS = frozenset({"id", "reset", "delay", "barrier"})
+
+
 def _float_param(op: Any) -> float:
     """First gate parameter as a float, with a clear error if it is unbound."""
     param = op.params[0]
@@ -259,6 +263,7 @@ class TargetWaveformSimulator:
         self.phase_history: dict[int, list[tuple[int, float]]] = {}
         self.total_duration_dt: int = 0
         self._num_qubits: int = 0
+        self._warned_ops: set[str] = set()
 
     def compile(self, scheduled_qc: QuantumCircuit) -> TargetWaveformSimulator:
         """
@@ -284,6 +289,7 @@ class TargetWaveformSimulator:
         qubit_phase: dict[int, float] = dict.fromkeys(range(self._num_qubits), 0.0)
         self.phase_history = {q: [(0, 0.0)] for q in range(self._num_qubits)}
         self.events_by_channel.clear()
+        self._warned_ops = set()
         max_stop_dt = 0
 
         for inst, start_dt in zip(
@@ -588,6 +594,23 @@ class TargetWaveformSimulator:
                     )
                 )
 
+        elif len(q_indices) == 2 and op.name == "cz":
+            # Uncalibrated flat-top stand-in for a coupler-driven CZ on the pair channel
+            c_q, t_q = q_indices
+            self._append_event(
+                ChannelEvent(
+                    channel=f"u({c_q},{t_q})",
+                    start_dt=start_dt,
+                    duration_dt=dur_dt,
+                    op_name="cz",
+                    qubits=q_indices,
+                    frame_phase_rad=qubit_phase[t_q],
+                    shape="gaussian_square",
+                    amp=0.65 + 0.0j,
+                    risefall_dt=16,
+                )
+            )
+
         elif op.name == "measure":
             for q in q_indices:
                 self._append_event(
@@ -603,6 +626,17 @@ class TargetWaveformSimulator:
                         risefall_dt=24,
                     )
                 )
+
+        elif (
+            dur_dt > 0 and op.name not in _IDLE_OPS and op.name not in self._warned_ops
+        ):
+            self._warned_ops.add(op.name)
+            warnings.warn(
+                f"Gate '{op.name}' on qubits {q_indices} has no waveform model; "
+                f"its {dur_dt} dt are left empty on the pulse sheet",
+                UserWarning,
+                stacklevel=3,
+            )
 
         return stop_dt
 

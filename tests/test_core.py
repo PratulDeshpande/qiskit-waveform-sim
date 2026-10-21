@@ -542,3 +542,57 @@ class TestFramesAnglesAndWindows:
         )
 
         assert pulse not in snippet.events
+
+
+class TestGateCoverage:
+    """Every pulse-bearing gate either produces a waveform or says why not."""
+
+    def test_cz_gate_produces_control_channel_waveform(self):
+        from qiskit.providers.fake_provider import GenericBackendV2
+
+        backend = GenericBackendV2(
+            num_qubits=2, basis_gates=["cz", "id", "rz", "sx", "x"], seed=42
+        )
+        qc = QuantumCircuit(2)
+        qc.cz(0, 1)
+        scheduled = generate_preset_pass_manager(
+            optimization_level=0, backend=backend, scheduling_method="alap"
+        ).run(qc)
+
+        sim = TargetWaveformSimulator(backend.target).compile(scheduled)
+
+        cz_events = [
+            e for e in sim.events_by_channel.get("u(0,1)", []) if e.op_name == "cz"
+        ]
+        assert len(cz_events) == 1
+        ev = cz_events[0]
+        snippet = sim.get_snippet("u(0,1)", ev.start_dt, ev.duration_dt)
+        assert np.max(np.abs(snippet.wave)) > 0.1
+
+    def test_gate_without_waveform_model_warns(self):
+        from qiskit.circuit.library import SwapGate
+        from qiskit.transpiler import InstructionProperties
+
+        target = _fractional_target()
+        target.add_instruction(
+            SwapGate(), {(0, 1): InstructionProperties(duration=320 * DT)}
+        )
+        qc = QuantumCircuit(2)
+        qc.swap(0, 1)
+        scheduled = _schedule_on(target, qc)
+
+        with pytest.warns(UserWarning, match="'swap'.*no waveform model"):
+            TargetWaveformSimulator(target).compile(scheduled)
+
+    def test_idle_gates_do_not_warn(self, backend_2q):
+        import warnings
+
+        qc = QuantumCircuit(1)
+        qc.id(0)
+        scheduled = generate_preset_pass_manager(
+            optimization_level=0, backend=backend_2q, scheduling_method="alap"
+        ).run(qc)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UserWarning)
+            TargetWaveformSimulator(backend_2q.target).compile(scheduled)
