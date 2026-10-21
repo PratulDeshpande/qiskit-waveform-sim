@@ -189,6 +189,8 @@ class AnalyticalEnvelopes:
         return amp * env
 
 
+_SECONDS_PER_UNIT = {"s": 1.0, "ms": 1e-3, "us": 1e-6, "ns": 1e-9, "ps": 1e-12}
+
 # Operations that occupy time but legitimately emit no drive waveform
 _IDLE_OPS = frozenset({"id", "reset", "delay", "barrier"})
 
@@ -399,6 +401,7 @@ class TargetWaveformSimulator:
         start_dt: int,
         qubit_phase: dict[int, float],
         override_ann: Any | None = None,
+        duration_override: int | None = None,
     ) -> int:
         """
         Recursively lower an operation to channel events with frame tracking.
@@ -407,26 +410,13 @@ class TargetWaveformSimulator:
         """
         # Handle Qiskit 2.x BoxOp containers and inspect custom PulseEnvelopeAnnotations
         if isinstance(op, BoxOp):
-            box_ann = override_ann
-            for ann in op.annotations:
-                if isinstance(ann, PulseEnvelopeAnnotation):
-                    box_ann = ann
-            cursor_dt = start_dt
-            for sub_inst in op.body.data:
-                sub_q = tuple(
-                    q_indices[op.body.find_bit(q).index] for q in sub_inst.qubits
-                )
-                cursor_dt = self._lower_instruction(
-                    sub_inst.operation,
-                    sub_q,
-                    cursor_dt,
-                    qubit_phase,
-                    override_ann=box_ann,
-                )
-            box_dur = self._get_duration_dt(op, q_indices)
-            return max(cursor_dt, start_dt + box_dur)
+            return self._lower_box(op, q_indices, start_dt, qubit_phase, override_ann)
 
-        dur_dt = self._get_duration_dt(op, q_indices)
+        dur_dt = (
+            duration_override
+            if duration_override is not None
+            else self._get_duration_dt(op, q_indices)
+        )
         stop_dt = start_dt + dur_dt
 
         if op.name == "rz":
@@ -505,35 +495,47 @@ class TargetWaveformSimulator:
                 )
             )
 
-        elif len(q_indices) == 2 and op.name in ("cx", "ecr", "rzz"):
+        elif len(q_indices) == 2 and op.name in ("cx", "ecr", "rzz", "cz"):
             c_q, t_q = q_indices
             scale = (_wrapped_angle(op) / (0.5 * np.pi)) if op.name == "rzz" else 1.0
-
-            # Uncalibrated Analytical Fallback for CR amplitude
-            cr_amp = complex(_full_scale(0.65 * scale, op.name))
-            # The CR tone is driven at the target frequency, so it rides the target frame
+            # Pair-channel tones are driven at the target frequency: target frame
             cr_phase = qubit_phase[t_q]
+            if override_ann is not None:
+                cr_shape = override_ann.shape
+                cr_amp = complex(_full_scale(override_ann.amp * scale, op.name))
+                cr_risefall = override_ann.risefall_dt
+                cr_beta, cr_sigma_ratio = override_ann.beta, override_ann.sigma_ratio
+            else:
+                # Uncalibrated Analytical Fallback for CR amplitude
+                cr_shape = "gaussian_square"
+                cr_amp = complex(_full_scale(0.65 * scale, op.name))
+                cr_risefall = 16
+                cr_beta, cr_sigma_ratio = 0.0, 0.25
 
-            if op.name == "ecr":
-                x_dur = min(
-                    160, dur_dt // 3
-                )  # Echo X is a fixed short pulse (e.g. 160dt)
-                cr_dur = (dur_dt - x_dur) // 2
-
+            def pair_pulse(t0: int, dur: int, name: str, phase: float) -> None:
                 self._append_event(
                     ChannelEvent(
                         channel=f"u({c_q},{t_q})",
-                        start_dt=start_dt,
-                        duration_dt=cr_dur,
-                        op_name=f"{op.name}_cr+",
+                        start_dt=t0,
+                        duration_dt=dur,
+                        op_name=name,
                         qubits=q_indices,
-                        frame_phase_rad=cr_phase,
-                        shape="gaussian_square",
+                        frame_phase_rad=phase,
+                        shape=cr_shape,
                         amp=cr_amp,
-                        risefall_dt=16,
+                        beta=cr_beta,
+                        sigma_dt=dur * cr_sigma_ratio,
+                        risefall_dt=cr_risefall,
                     )
                 )
 
+            if op.name == "cz":
+                # Uncalibrated flat-top stand-in for a coupler-driven CZ
+                pair_pulse(start_dt, dur_dt, "cz", cr_phase)
+            elif op.name == "ecr":
+                x_dur = min(160, dur_dt // 3)  # Echo X is a fixed short pulse
+                cr_dur = (dur_dt - x_dur) // 2
+                pair_pulse(start_dt, cr_dur, f"{op.name}_cr+", cr_phase)
                 self._append_event(
                     ChannelEvent(
                         channel=f"d{c_q}",
@@ -549,67 +551,21 @@ class TargetWaveformSimulator:
                         risefall_dt=16,
                     )
                 )
-
-                self._append_event(
-                    ChannelEvent(
-                        channel=f"u({c_q},{t_q})",
-                        start_dt=start_dt + cr_dur + x_dur,
-                        duration_dt=dur_dt - cr_dur - x_dur,
-                        op_name=f"{op.name}_cr-",
-                        qubits=q_indices,
-                        frame_phase_rad=cr_phase + np.pi,
-                        shape="gaussian_square",
-                        amp=cr_amp,
-                        risefall_dt=16,
-                    )
+                pair_pulse(
+                    start_dt + cr_dur + x_dur,
+                    dur_dt - cr_dur - x_dur,
+                    f"{op.name}_cr-",
+                    cr_phase + np.pi,
                 )
-
             else:
                 half_dur = dur_dt // 2
-                self._append_event(
-                    ChannelEvent(
-                        channel=f"u({c_q},{t_q})",
-                        start_dt=start_dt,
-                        duration_dt=half_dur,
-                        op_name=f"{op.name}_cr+",
-                        qubits=q_indices,
-                        frame_phase_rad=cr_phase,
-                        shape="gaussian_square",
-                        amp=cr_amp,
-                        risefall_dt=16,
-                    )
+                pair_pulse(start_dt, half_dur, f"{op.name}_cr+", cr_phase)
+                pair_pulse(
+                    start_dt + half_dur,
+                    dur_dt - half_dur,
+                    f"{op.name}_cr-",
+                    cr_phase + np.pi,
                 )
-
-                self._append_event(
-                    ChannelEvent(
-                        channel=f"u({c_q},{t_q})",
-                        start_dt=start_dt + half_dur,
-                        duration_dt=dur_dt - half_dur,
-                        op_name=f"{op.name}_cr-",
-                        qubits=q_indices,
-                        frame_phase_rad=cr_phase + np.pi,
-                        shape="gaussian_square",
-                        amp=cr_amp,
-                        risefall_dt=16,
-                    )
-                )
-
-        elif len(q_indices) == 2 and op.name == "cz":
-            # Uncalibrated flat-top stand-in for a coupler-driven CZ on the pair channel
-            c_q, t_q = q_indices
-            self._append_event(
-                ChannelEvent(
-                    channel=f"u({c_q},{t_q})",
-                    start_dt=start_dt,
-                    duration_dt=dur_dt,
-                    op_name="cz",
-                    qubits=q_indices,
-                    frame_phase_rad=qubit_phase[t_q],
-                    shape="gaussian_square",
-                    amp=0.65 + 0.0j,
-                    risefall_dt=16,
-                )
-            )
 
         elif op.name == "measure":
             for q in q_indices:
@@ -638,6 +594,69 @@ class TargetWaveformSimulator:
                 stacklevel=3,
             )
 
+        return stop_dt
+
+    def _box_duration_dt(self, op: BoxOp) -> int | None:
+        """Static box duration in dt, or None when the box has no fixed duration."""
+        if op.duration is None or op.unit == "expr":
+            return None
+        return self._to_dt(op.duration, op.unit)
+
+    def _to_dt(self, duration: float, unit: str) -> int:
+        """Convert a duration in `unit` (s, ms, us, ns, ps or dt) to whole dt."""
+        if unit in _SECONDS_PER_UNIT:
+            return int(round(duration * _SECONDS_PER_UNIT[unit] / self.dt))
+        return int(duration)
+
+    def _lower_box(
+        self,
+        op: BoxOp,
+        q_indices: tuple[int, ...],
+        start_dt: int,
+        qubit_phase: dict[int, float],
+        override_ann: Any | None,
+    ) -> int:
+        """
+        Lower a BoxOp body.
+
+        Instructions on different qubits run in parallel (one cursor per qubit).
+        A box with a fixed duration around a single pulse gate sets that gate's
+        duration; a box without a duration lasts as long as its contents.
+        """
+        box_ann = override_ann
+        for ann in op.annotations:
+            if isinstance(ann, PulseEnvelopeAnnotation):
+                box_ann = ann
+        box_dur = self._box_duration_dt(op)
+        body = list(op.body.data)
+        pulse_idx = [
+            i
+            for i, inst in enumerate(body)
+            if inst.operation.name not in ("rz", "barrier", "delay")
+        ]
+        sized_idx = (
+            pulse_idx[0] if box_dur is not None and len(pulse_idx) == 1 else None
+        )
+
+        cursors: dict[int, int] = {}
+        stop_dt = start_dt
+        for i, sub_inst in enumerate(body):
+            sub_q = tuple(q_indices[op.body.find_bit(q).index] for q in sub_inst.qubits)
+            t0 = max((cursors.get(q, start_dt) for q in sub_q), default=start_dt)
+            end_dt = self._lower_instruction(
+                sub_inst.operation,
+                sub_q,
+                t0,
+                qubit_phase,
+                override_ann=box_ann,
+                duration_override=box_dur if i == sized_idx else None,
+            )
+            for q in sub_q:
+                cursors[q] = end_dt
+            stop_dt = max(stop_dt, end_dt)
+
+        if box_dur is not None:
+            stop_dt = max(stop_dt, start_dt + box_dur)
         return stop_dt
 
     def _append_event(self, event: ChannelEvent) -> None:
