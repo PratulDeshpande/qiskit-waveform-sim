@@ -181,6 +181,6 @@ If you use `qiskit-waveform-sim` in your research, please cite:
   title        = {qiskit-waveform-sim: Classical Control Waveform Simulator},
   year         = {2026},
   url          = {https://github.com/PratulDeshpande/qiskit-waveform-sim},
-  version      = {0.1.8}
+  version      = {0.2.0}
 }
 ```

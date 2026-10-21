@@ -6,7 +6,8 @@ with Qiskit's modern Target, op_start_times, BoxOp, fractional gates, and the ne
 qiskit.circuit.annotation.Annotation API.
 """
 
-from importlib.metadata import PackageNotFoundError, version
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _package_version
 
 from qiskit_waveform_sim.annotations import (
     PulseAnnotationSerializer,
@@ -29,7 +30,7 @@ from qiskit_waveform_sim.visualization import (
 
 try:
     # Single source of truth: the version declared in pyproject.toml
-    __version__ = version("qiskit-waveform-sim")
+    __version__ = _package_version("qiskit-waveform-sim")
 except PackageNotFoundError:  # pragma: no cover - running from an uninstalled checkout
     __version__ = "0.0.0+unknown"
 __all__ = [
