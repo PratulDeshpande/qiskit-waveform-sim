@@ -8,6 +8,7 @@ Virtual-Z frame tracking, matching LabOne Q OutputSimulator architecture.
 from __future__ import annotations
 
 import bisect
+import math
 import warnings
 from dataclasses import dataclass, field
 from typing import Any
@@ -186,6 +187,35 @@ class AnalyticalEnvelopes:
             env[right_mask] = np.clip((g_r - pedestal) / (1.0 - pedestal), 0.0, 1.0)
 
         return amp * env
+
+
+def _float_param(op: Any) -> float:
+    """First gate parameter as a float, with a clear error if it is unbound."""
+    param = op.params[0]
+    try:
+        return float(param)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"Gate '{op.name}' has an unbound parameter ({param}). "
+            "Bind all parameters with QuantumCircuit.assign_parameters() before compile()."
+        ) from exc
+
+
+def _wrapped_angle(op: Any) -> float:
+    """Rotation angle wrapped into [-pi, pi]; rotations are 2*pi periodic."""
+    return math.remainder(_float_param(op), 2.0 * math.pi)
+
+
+def _full_scale(amp: float, op_name: str) -> float:
+    """Clip an amplitude to the DAC full-scale range, warning when it does."""
+    if abs(amp) <= 1.0:
+        return amp
+    warnings.warn(
+        f"Amplitude {amp:.3f} for '{op_name}' exceeds DAC full-scale and was clipped to 1.0",
+        UserWarning,
+        stacklevel=4,
+    )
+    return math.copysign(1.0, amp)
 
 
 class TargetWaveformSimulator:
@@ -394,7 +424,7 @@ class TargetWaveformSimulator:
         stop_dt = start_dt + dur_dt
 
         if op.name == "rz":
-            lam = float(op.params[0])
+            lam = _float_param(op)
             q0 = q_indices[0]
             qubit_phase[q0] -= lam
             self.phase_history[q0].append((start_dt, qubit_phase[q0]))
@@ -451,8 +481,7 @@ class TargetWaveformSimulator:
                 elif op.name == "x":
                     amp = 0.90
                 else:
-                    theta = float(op.params[0])
-                    amp = 0.90 * (theta / np.pi)
+                    amp = 0.90 * (_wrapped_angle(op) / np.pi)
 
             self._append_event(
                 ChannelEvent(
@@ -472,10 +501,12 @@ class TargetWaveformSimulator:
 
         elif len(q_indices) == 2 and op.name in ("cx", "ecr", "rzz"):
             c_q, t_q = q_indices
-            scale = (float(op.params[0]) / (0.5 * np.pi)) if op.name == "rzz" else 1.0
+            scale = (_wrapped_angle(op) / (0.5 * np.pi)) if op.name == "rzz" else 1.0
 
             # Uncalibrated Analytical Fallback for CR amplitude
-            cr_amp = complex(0.65 * scale)
+            cr_amp = complex(_full_scale(0.65 * scale, op.name))
+            # The CR tone is driven at the target frequency, so it rides the target frame
+            cr_phase = qubit_phase[t_q]
 
             if op.name == "ecr":
                 x_dur = min(
@@ -490,7 +521,7 @@ class TargetWaveformSimulator:
                         duration_dt=cr_dur,
                         op_name=f"{op.name}_cr+",
                         qubits=q_indices,
-                        frame_phase_rad=qubit_phase[c_q],
+                        frame_phase_rad=cr_phase,
                         shape="gaussian_square",
                         amp=cr_amp,
                         risefall_dt=16,
@@ -520,7 +551,7 @@ class TargetWaveformSimulator:
                         duration_dt=dur_dt - cr_dur - x_dur,
                         op_name=f"{op.name}_cr-",
                         qubits=q_indices,
-                        frame_phase_rad=qubit_phase[c_q] + np.pi,
+                        frame_phase_rad=cr_phase + np.pi,
                         shape="gaussian_square",
                         amp=cr_amp,
                         risefall_dt=16,
@@ -536,7 +567,7 @@ class TargetWaveformSimulator:
                         duration_dt=half_dur,
                         op_name=f"{op.name}_cr+",
                         qubits=q_indices,
-                        frame_phase_rad=qubit_phase[c_q],
+                        frame_phase_rad=cr_phase,
                         shape="gaussian_square",
                         amp=cr_amp,
                         risefall_dt=16,
@@ -550,7 +581,7 @@ class TargetWaveformSimulator:
                         duration_dt=dur_dt - half_dur,
                         op_name=f"{op.name}_cr-",
                         qubits=q_indices,
-                        frame_phase_rad=qubit_phase[c_q] + np.pi,
+                        frame_phase_rad=cr_phase + np.pi,
                         shape="gaussian_square",
                         amp=cr_amp,
                         risefall_dt=16,
@@ -635,11 +666,8 @@ class TargetWaveformSimulator:
         # Pre-fill phase_trace with piecewise constant frame phase
         for i in range(len(phase_hist)):
             t_change, phase_val = phase_hist[i]
-            t_next = (
-                phase_hist[i + 1][0]
-                if i + 1 < len(phase_hist)
-                else self.total_duration_dt + length_dt
-            )
+            # The last frame phase holds until the end of the requested window
+            t_next = phase_hist[i + 1][0] if i + 1 < len(phase_hist) else stop_dt
 
             w_start = max(start_dt, t_change)
             w_stop = min(stop_dt, t_next)
@@ -671,7 +699,8 @@ class TargetWaveformSimulator:
             if ev.start_dt >= stop_dt:
                 break
             ev_stop = ev.start_dt + ev.duration_dt
-            if ev_stop < start_dt:
+            # Pulses ending exactly at the window start do not overlap it
+            if ev_stop < start_dt or (ev_stop == start_dt and ev.duration_dt > 0):
                 continue
             overlapping.append(ev)
             if ev.duration_dt == 0:

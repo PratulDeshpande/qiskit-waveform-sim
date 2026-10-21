@@ -417,3 +417,128 @@ class TestTargetWaveformSimulator:
         assert isinstance(qasm3_str, str)
         assert len(qasm3_str) > 0
         assert "OPENQASM 3" in qasm3_str
+
+
+DT = 0.222e-9
+
+
+def _fractional_target():
+    """Target with native fractional rx/rzz (like IBM fractional-gate backends)."""
+    from qiskit.circuit import Parameter
+    from qiskit.circuit.library import Measure, RXGate, RZGate, RZZGate, SXGate
+    from qiskit.transpiler import InstructionProperties, Target
+
+    theta = Parameter("theta")
+    one_q = {(q,): InstructionProperties(duration=160 * DT) for q in range(2)}
+    target = Target(num_qubits=2, dt=DT)
+    target.add_instruction(RXGate(theta), dict(one_q))
+    target.add_instruction(SXGate(), dict(one_q))
+    target.add_instruction(
+        RZGate(theta), {(q,): InstructionProperties(duration=0.0) for q in range(2)}
+    )
+    target.add_instruction(
+        RZZGate(theta), {(0, 1): InstructionProperties(duration=1600 * DT)}
+    )
+    target.add_instruction(
+        Measure(), {(q,): InstructionProperties(duration=1600 * DT) for q in range(2)}
+    )
+    return target
+
+
+def _schedule_on(target, qc):
+    pm = generate_preset_pass_manager(
+        optimization_level=0, target=target, scheduling_method="alap"
+    )
+    return pm.run(qc)
+
+
+def _phase_at(sim, qubit, t_dt):
+    """Frame phase of `qubit` in effect at time t_dt, read from phase history."""
+    return [p for t, p in sim.get_phase_history(qubit) if t <= t_dt][-1]
+
+
+class TestFramesAnglesAndWindows:
+    """Regression tests for CR frame, fractional angles and snippet windows."""
+
+    def test_cr_pulse_uses_target_frame(self, backend_2q):
+        qc = QuantumCircuit(2)
+        qc.rz(1.0, 0)
+        qc.rz(0.3, 1)
+        qc.cx(0, 1)
+        sim = TargetWaveformSimulator(backend_2q.target).compile(
+            generate_preset_pass_manager(
+                optimization_level=1, backend=backend_2q, scheduling_method="alap"
+            ).run(qc)
+        )
+
+        cr_plus = next(
+            e for e in sim.events_by_channel["u(0,1)"] if e.op_name.endswith("cr+")
+        )
+        target_phase = _phase_at(sim, 1, cr_plus.start_dt)
+        assert target_phase != _phase_at(sim, 0, cr_plus.start_dt)
+        assert cr_plus.frame_phase_rad == pytest.approx(target_phase)
+
+        snippet = sim.get_snippet("u(0,1)", cr_plus.start_dt, cr_plus.duration_dt)
+        assert snippet.phase_rad[cr_plus.duration_dt // 2] == pytest.approx(
+            target_phase
+        )
+
+    def test_large_rx_angle_does_not_crash(self):
+        target = _fractional_target()
+        qc = QuantumCircuit(1)
+        qc.rx(4.0, 0)
+
+        sim = TargetWaveformSimulator(target).compile(_schedule_on(target, qc))
+
+        (ev,) = [e for e in sim.events_by_channel["d0"] if e.op_name == "rx"]
+        # rx(4.0) == rx(4.0 - 2*pi): amplitude follows the wrapped angle
+        assert ev.amp.real == pytest.approx(0.90 * (4.0 - 2 * np.pi) / np.pi)
+
+    def test_large_rzz_angle_clipped_with_warning(self):
+        target = _fractional_target()
+        qc = QuantumCircuit(2)
+        qc.rzz(np.pi, 0, 1)
+
+        with pytest.warns(UserWarning, match="clipped"):
+            sim = TargetWaveformSimulator(target).compile(_schedule_on(target, qc))
+
+        amps = [abs(e.amp) for e in sim.events_by_channel["u(0,1)"]]
+        assert amps and all(a == pytest.approx(1.0) for a in amps)
+
+    def test_unbound_parameter_raises_clear_error(self):
+        from qiskit.circuit import Parameter
+
+        target = _fractional_target()
+        qc = QuantumCircuit(1)
+        qc.rx(Parameter("a"), 0)
+        scheduled = _schedule_on(target, qc)
+
+        with pytest.raises(ValueError, match="unbound"):
+            TargetWaveformSimulator(target).compile(scheduled)
+
+    def test_phase_trace_holds_after_circuit_end(self, backend_2q):
+        qc = QuantumCircuit(1)
+        qc.rz(1.0, 0)
+        qc.sx(0)
+        sim = TargetWaveformSimulator(backend_2q.target).compile(
+            generate_preset_pass_manager(
+                optimization_level=1, backend=backend_2q, scheduling_method="alap"
+            ).run(qc)
+        )
+        final_phase = sim.get_phase_history(0)[-1][1]
+        assert final_phase != 0.0
+
+        snippet = sim.get_snippet("d0", sim.total_duration_dt + 500, 100)
+
+        assert np.allclose(snippet.phase_rad, final_phase)
+
+    def test_snippet_excludes_events_ending_at_window_start(self, compiled_simulator):
+        pulse = next(
+            e for e in compiled_simulator.events_by_channel["d0"] if e.duration_dt > 0
+        )
+
+        snippet = compiled_simulator.get_snippet(
+            "d0", pulse.start_dt + pulse.duration_dt, 10
+        )
+
+        assert pulse not in snippet.events
