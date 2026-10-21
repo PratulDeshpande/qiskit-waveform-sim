@@ -301,3 +301,129 @@ class TestVisualizationEdgeCases:
             # Allow small floating point differences
             assert abs(last_xaxis.range[0] - 100) < 1.0
             assert abs(last_xaxis.range[1] - 300) < 1.0
+
+
+class TestVisualizationBehaviour:
+    """Behavioural checks against a real compiled simulator (not a mock)."""
+
+    @staticmethod
+    def _virtual_z_count(sim):
+        return sum(
+            1
+            for ch in sim.get_channels()
+            for ev in sim.events_by_channel[ch]
+            if ev.shape == "virtual_z"
+        )
+
+    @staticmethod
+    def _yref(sim, channel):
+        idx = sim.get_channels().index(channel) + 1
+        return "y" if idx == 1 else f"y{idx}"
+
+    def test_pulse_sheet_draws_virtual_z_markers(self, compiled_simulator):
+        n_vz = self._virtual_z_count(compiled_simulator)
+        assert n_vz > 0  # h(0) decomposes into rz-sx-rz
+
+        fig = create_pulse_sheet(compiled_simulator)
+
+        dashed = [
+            s for s in fig.layout.shapes if s.type == "line" and s.line.dash == "dash"
+        ]
+        assert len(dashed) == n_vz
+
+    def test_pulse_sheet_hides_markers_when_disabled(self, compiled_simulator):
+        fig = create_pulse_sheet(
+            compiled_simulator, PulseSheetConfig(show_phase_markers=False)
+        )
+
+        assert not [s for s in fig.layout.shapes if s.type == "line"]
+
+    def test_measure_events_colored_red(self, compiled_simulator):
+        fig = create_pulse_sheet(compiled_simulator)
+
+        yref = self._yref(compiled_simulator, "m0")
+        fills = {
+            s.fillcolor
+            for s in fig.layout.shapes
+            if s.type == "rect" and s.yref == yref
+        }
+        assert fills == {"#d62728"}
+
+    def test_combined_view_does_not_mutate_config(self, compiled_simulator):
+        config = PulseSheetConfig()
+
+        create_combined_view(
+            compiled_simulator, "d0", start_dt=0, length_dt=500, config=config
+        )
+
+        assert config.time_window_ns is None
+
+    def test_mpl_pulse_sheet_draws_virtual_z_markers(self, compiled_simulator):
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        from qiskit_waveform_sim.visualization.matplotlib import plot_pulse_sheet
+
+        n_vz = self._virtual_z_count(compiled_simulator)
+        fig = plot_pulse_sheet(compiled_simulator)
+
+        dashed = [ln for ln in fig.axes[0].lines if ln.get_linestyle() == "--"]
+        assert len(dashed) == n_vz
+        plt.close(fig)
+
+    def test_mpl_pulse_sheet_lays_out_its_own_figure(
+        self, compiled_simulator, monkeypatch
+    ):
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        from qiskit_waveform_sim.visualization.matplotlib import plot_pulse_sheet
+
+        target_fig, target_ax = plt.subplots()
+        other_fig = plt.figure()  # becomes the "current" figure
+        calls = []
+        monkeypatch.setattr(other_fig, "tight_layout", lambda *a, **k: calls.append(1))
+
+        plot_pulse_sheet(compiled_simulator, ax=target_ax)
+
+        assert calls == []
+        plt.close("all")
+
+    def test_plot_iq_waveforms_accepts_axes_array(self, compiled_simulator):
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        from qiskit_waveform_sim.visualization.matplotlib import plot_iq_waveforms
+
+        snippet = compiled_simulator.get_snippet("d0", 0, 500)
+        fig, axes = plt.subplots(3, 1)
+
+        returned = plot_iq_waveforms(snippet, ax=axes)
+
+        assert returned is fig
+        assert len(fig.axes) == 3
+        assert all(len(a.lines) > 0 for a in axes)
+        plt.close(fig)
+
+    def test_plot_iq_waveforms_rejects_too_few_axes(self, compiled_simulator):
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        from qiskit_waveform_sim.visualization.matplotlib import plot_iq_waveforms
+
+        snippet = compiled_simulator.get_snippet("d0", 0, 500)
+        fig, ax = plt.subplots()
+        axes_list = [ax]
+
+        with pytest.raises(ValueError, match="3 axes"):
+            plot_iq_waveforms(snippet, ax=axes_list)
+        assert axes_list == [ax]  # caller's list untouched
+        plt.close(fig)
