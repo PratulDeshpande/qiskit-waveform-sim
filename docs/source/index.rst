@@ -10,10 +10,10 @@ It bridges the post-Pulse waveform gap created by Qiskit 2.0-2.5's architectural
 - **Lazy Windowed Evaluation**: :math:`O(W)` memory for snippet extraction, independent of total circuit depth
 - **Exact Virtual-Z Frame Tracking**: Per-qubit phase accumulation propagated to drive and cross-resonance channels
 - **Analytical Envelope Synthesis**: DRAG (with leakage suppression), GaussianSquare (flat-top with pedestal correction)
-- **Fractional Gate Support**: Continuous parametric amplitude/duration scaling for :math:`R_X(\theta)`, :math:`R_{ZZ}(\theta)`
-- **BoxOp & Annotation Native**: Custom ``PulseEnvelopeAnnotation`` with OpenQASM 3 & QPY serialization
+- **Fractional Gate Support**: Amplitude scaling for :math:`R_X(\theta)`, :math:`R_{ZZ}(\theta)` (angles wrapped to :math:`[-\pi, \pi]`)
+- **BoxOp & Annotation Native**: Custom ``PulseEnvelopeAnnotation`` with OpenQASM 3 & QPY serialization, applied by the simulator whenever the circuit carries start times
 - **Interactive Visualization**: Plotly-based Pulse Sheet + synchronized I/Q Oscilloscope
-- **LabOne Q Compatible Architecture**: ``OutputSimulator.get_snippet()``-style API
+- **LabOne Q-style Architecture**: ``OutputSimulator.get_snippet()``-style API
 
 .. note::
    **Analytical Envelope Philosophy**: ``qiskit-waveform-sim`` is designed for offline, deterministic control simulation. Rather than querying cloud-based calibration databases over the network, it synthesizes standardized, idealized physical pulse envelopes (such as DRAG with derivative leakage suppression and GaussianSquare with flat-top rise/fall pedestal corrections) derived directly from circuit gate names, parameters, and modern ``Target`` instruction durations.

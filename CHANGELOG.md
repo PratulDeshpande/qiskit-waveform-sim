@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Pulse sheet phase markers**: Virtual-Z markers are now drawn (Plotly and Matplotlib) and honour `show_phase_markers`.
+- **Event colours**: measure pulses render red and ECR echo pulses purple, as the legend says.
+- **`create_combined_view`** no longer overwrites the caller's `PulseSheetConfig`.
+- **`plot_iq_waveforms`** accepts arrays/lists of axes without mutating them and raises `ValueError` when given too few.
+- **Cross-resonance frame**: `u(c,t)` pulses now use the target qubit's frame, consistent with the reported phase trace.
+- **Fractional gates**: `rx`/`rzz` angles are wrapped to [-π, π]; over-range `rzz` amplitudes are clipped with a warning instead of aborting `compile()`; unbound parameters raise a clear `ValueError`.
+- **Snippet windows**: the last frame phase holds past the circuit end; pulses ending exactly at a window start are no longer reported.
+- **BoxOp lowering**: instructions on different qubits run in parallel; a fixed-duration box around one gate sets that gate's duration; boxes without a duration no longer fall back to 160 dt with an "Unknown operation" warning; annotations also apply to `cx`/`ecr`/`rzz`/`cz`.
+- **Documentation accuracy**: DRAG docstring sign and edge behaviour (the 0.1.7 note that Q "vanishes at boundaries" was inaccurate: Q is +β·g′, small but non-zero at the edges), real `@pulse_sim.envelope {...}` OpenQASM 3 format, BoxOp scheduling limitation, and tutorials re-executed so their outputs match the code.
+
+### Added
+- `cz` gates are drawn as an uncalibrated flat-top pulse on `u(c,t)`.
+- A `UserWarning` for gates that occupy time but have no waveform model (e.g. `swap`).
+- `PulseEnvelopeAnnotation` validates `amp` (within ±1), `sigma_ratio` (> 0 for drag) and `risefall_dt` (≥ 0).
+- `.pre-commit-config.yaml` running ruff, black and mypy.
+
+### Changed
+- `__version__` and the docs release are read from package metadata; `pyproject.toml` is the single place to bump the version.
+- Docs extra requires `qiskit-sphinx-theme>=2.1` and `sphinx>=9.0.4,<10` (theme 2.0.x needs `sphinx<9`); the docs theme switched from sphinx-rtd-theme to the Qiskit Ecosystem theme.
+- CI lints `examples/` and tests both the oldest supported and the newest Qiskit 2.x; tox adds Python 3.13.
+- Removed compiled `.pyc` files and a stale test copy from the repository.
+
 ## [0.1.8] - 2026-10-12
 
 ### Changed
