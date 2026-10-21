@@ -55,13 +55,13 @@ Development Setup
    pytest -v tests/
 
    # Run linters
-   ruff check qiskit_waveform_sim tests
-   black --check qiskit_waveform_sim tests
+   ruff check qiskit_waveform_sim tests examples
+   black --check qiskit_waveform_sim tests examples
    mypy qiskit_waveform_sim
 
    # Build documentation
    cd docs
-   sphinx-build -b html source source/_build/html
+   sphinx-build -b html source _build/html -W --keep-going
 
 Verifying Installation
 ----------------------

@@ -60,16 +60,19 @@ We use the following tools (configured in `pyproject.toml`):
 Run all checks:
 
 ```bash
-ruff check qiskit_waveform_sim tests
-black --check qiskit_waveform_sim tests
+ruff check qiskit_waveform_sim tests examples
+black --check qiskit_waveform_sim tests examples
 mypy qiskit_waveform_sim
 ```
+
+The same checks run on every commit once you `pre-commit install`
+(configured in `.pre-commit-config.yaml`).
 
 Auto-fix formatting:
 
 ```bash
-ruff check --fix qiskit_waveform_sim tests
-black qiskit_waveform_sim tests
+ruff check --fix qiskit_waveform_sim tests examples
+black qiskit_waveform_sim tests examples
 ```
 
 ### Adding New Features
@@ -90,22 +93,18 @@ black qiskit_waveform_sim tests
 
 * Update docstrings for public APIs (NumPy style)
 * Add examples to relevant tutorial notebooks
-* Build docs locally: `cd docs && sphinx-build -b html source source/_build/html`
+* Build docs locally: `cd docs && sphinx-build -b html source _build/html -W --keep-going`
 
 ### Release Process
 
 Releases are managed by maintainers:
 
-1. Update version in `pyproject.toml` and `qiskit_waveform_sim/__init__.py`
-2. Update `CHANGELOG.md`
+1. Update `version` in `pyproject.toml` (the package and the docs read it from there)
+   and the `version` field of the README citation
+2. Move the `[Unreleased]` entries in `CHANGELOG.md` under the new version
 3. Create git tag: `git tag vX.Y.Z`
 4. Push tag: `git push origin vX.Y.Z`
 5. GitHub Actions builds and publishes to PyPI
-
-## Architecture Decisions
-
-Key architectural decisions are documented in the `Idea.md` file and the
-implementation plan. Major changes should reference these documents.
 
 ## Getting Help
 
