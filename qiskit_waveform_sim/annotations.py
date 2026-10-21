@@ -8,10 +8,7 @@ to BoxOp blocks, with full OpenQASM 3 and QPY serialization support.
 from __future__ import annotations
 
 import ast
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    pass
+from typing import Any
 
 from qiskit.circuit.annotation import Annotation, OpenQASM3Serializer
 
@@ -69,18 +66,35 @@ class PulseEnvelopeAnnotation(Annotation):
         shape : str
             Pulse shape: "drag" or "gaussian_square"
         amp : float
-            Peak amplitude (normalized, 0.0-1.0)
+            Peak amplitude as a fraction of DAC full-scale, -1.0 to 1.0
+            (negative values flip the drive phase by pi)
         beta : float
             DRAG leakage suppression parameter (for drag shape)
         sigma_ratio : float
-            Gaussian sigma as ratio of pulse duration (for drag shape)
+            Gaussian sigma as ratio of pulse duration; must be > 0 for drag
+            (ignored for gaussian_square)
         risefall_dt : int
-            Rise/fall duration in dt (for gaussian_square shape)
+            Rise/fall duration in dt, >= 0 (for gaussian_square shape)
+
+        Raises
+        ------
+        ValueError
+            If the shape is unsupported or a parameter is out of range.
         """
         if shape not in ("drag", "gaussian_square"):
             raise ValueError(
                 f"Unsupported shape: {shape}. Use 'drag' or 'gaussian_square'"
             )
+        if abs(amp) > 1.0:
+            raise ValueError(
+                f"amp must be within [-1.0, 1.0] (DAC full-scale), got {amp}"
+            )
+        if shape == "drag" and sigma_ratio <= 0:
+            raise ValueError(
+                f"sigma_ratio must be > 0 for a drag pulse, got {sigma_ratio}"
+            )
+        if risefall_dt < 0:
+            raise ValueError(f"risefall_dt must be >= 0, got {risefall_dt}")
 
         self.shape = shape
         self.amp = float(amp)
@@ -111,7 +125,7 @@ class PulseEnvelopeAnnotation(Annotation):
         )
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize to dictionary for QPY."""
+        """Plain-dictionary form of the parameters (inverse of ``from_dict``)."""
         return {
             "shape": self.shape,
             "amp": self.amp,
@@ -122,7 +136,7 @@ class PulseEnvelopeAnnotation(Annotation):
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> PulseEnvelopeAnnotation:
-        """Deserialize from dictionary (QPY)."""
+        """Build an annotation from ``to_dict()`` output."""
         return cls(**data)
 
 
@@ -132,9 +146,9 @@ class PulseAnnotationSerializer(OpenQASM3Serializer):
 
     OpenQASM 3 Export Format::
 
-        @pulse_sim.drag(amp=0.5, beta=0.08, sigma_ratio=0.25, risefall_dt=16)
-        box {
-            sx q[0];
+        @pulse_sim.envelope {'shape': 'drag', 'amp': 0.5, 'beta': 0.08, 'sigma_ratio': 0.25, 'risefall_dt': 16}
+        box[160dt] {
+            sx $0;
         }
 
     QPY Serialization::
@@ -190,8 +204,3 @@ class PulseAnnotationSerializer(OpenQASM3Serializer):
             raise ValueError(
                 f"Failed to parse PulseEnvelopeAnnotation payload: {payload}"
             ) from e
-
-
-# Register the serializer with Qiskit's annotation system
-# This happens automatically when the module is imported and qiskit.qasm3 is used
-# with annotation_handlers={"pulse_sim.envelope": PulseAnnotationSerializer()}

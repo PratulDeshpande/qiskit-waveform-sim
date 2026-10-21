@@ -672,3 +672,24 @@ class TestBoxLowering:
         cr = sim.events_by_channel["u(0,1)"]
         assert [(e.amp, e.risefall_dt) for e in cr] == [(0.8, 30), (0.8, 30)]
         assert sum(e.duration_dt for e in cr) == 300
+
+
+@pytest.mark.parametrize(
+    ("duration", "unit", "expected_dt"),
+    [
+        (100, "dt", 100),
+        (1e-6, "s", 4505),
+        (1e-3, "ms", 4505),
+        (1.0, "us", 4505),
+        (10.0, "ns", 45),
+        (10000.0, "ps", 45),
+    ],
+)
+def test_unit_conversion_for_delay_units(backend_2q, duration, unit, expected_dt):
+    assert backend_2q.target.dt == pytest.approx(0.222e-9)
+    qc = QuantumCircuit(1)
+    qc.delay(duration, 0, unit=unit)
+
+    sim = TargetWaveformSimulator(backend_2q.target).compile(_hand_scheduled(qc, [0]))
+
+    assert sim.total_duration_dt == expected_dt

@@ -283,3 +283,26 @@ class TestAnnotationIntegration:
                 for a in op.annotations:
                     assert isinstance(a, PulseEnvelopeAnnotation)
                     assert a == ann
+
+
+class TestAnnotationValidation:
+    """Invalid pulse parameters are rejected when the annotation is built."""
+
+    @pytest.mark.parametrize("amp", [1.5, -1.01])
+    def test_annotation_rejects_amp_above_one(self, amp):
+        with pytest.raises(ValueError, match="amp"):
+            PulseEnvelopeAnnotation(amp=amp)
+
+    @pytest.mark.parametrize("sigma_ratio", [0.0, -0.1])
+    def test_annotation_rejects_nonpositive_sigma_for_drag(self, sigma_ratio):
+        with pytest.raises(ValueError, match="sigma_ratio"):
+            PulseEnvelopeAnnotation(shape="drag", sigma_ratio=sigma_ratio)
+
+    def test_gaussian_square_ignores_sigma_ratio(self):
+        ann = PulseEnvelopeAnnotation(shape="gaussian_square", sigma_ratio=0.0)
+
+        assert ann.sigma_ratio == 0.0
+
+    def test_annotation_rejects_negative_risefall(self):
+        with pytest.raises(ValueError, match="risefall_dt"):
+            PulseEnvelopeAnnotation(shape="gaussian_square", risefall_dt=-1)
