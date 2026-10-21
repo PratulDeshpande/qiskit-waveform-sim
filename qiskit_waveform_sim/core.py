@@ -458,13 +458,14 @@ class TargetWaveformSimulator:
                 cr_shape = override_ann.shape
                 cr_amp = complex(_full_scale(override_ann.amp * scale, op.name))
                 cr_risefall = override_ann.risefall_dt
-                cr_beta, cr_sigma_ratio = override_ann.beta, override_ann.sigma_ratio
+                cr_beta = override_ann.beta
+                cr_sigma_ratio: float | None = override_ann.sigma_ratio
             else:
                 # Uncalibrated Analytical Fallback for CR amplitude
                 cr_shape = "gaussian_square"
                 cr_amp = complex(_full_scale(0.65 * scale, op.name))
                 cr_risefall = 16
-                cr_beta, cr_sigma_ratio = 0.0, 0.25
+                cr_beta, cr_sigma_ratio = 0.0, None
 
             def pair_pulse(t0: int, dur: int, name: str, phase: float) -> None:
                 self._append_event(
@@ -478,7 +479,9 @@ class TargetWaveformSimulator:
                         shape=cr_shape,
                         amp=cr_amp,
                         beta=cr_beta,
-                        sigma_dt=dur * cr_sigma_ratio,
+                        sigma_dt=(
+                            dur * cr_sigma_ratio if cr_sigma_ratio is not None else 16.0
+                        ),
                         risefall_dt=cr_risefall,
                     )
                 )
@@ -603,7 +606,13 @@ class TargetWaveformSimulator:
                 t0,
                 qubit_phase,
                 override_ann=box_ann,
-                duration_override=box_dur if i == sized_idx else None,
+                # The sized gate gets whatever box time is left after earlier
+                # instructions on its qubits (e.g. a leading delay)
+                duration_override=(
+                    max(0, box_dur - (t0 - start_dt))
+                    if i == sized_idx and box_dur is not None
+                    else None
+                ),
             )
             for q in sub_q:
                 cursors[q] = end_dt
