@@ -65,7 +65,7 @@ body:
       label: How Has This Been Tested?
       description: Describe the tests you ran and their results
       placeholder: |
-        - Ran `pytest tests/` - all 52 tests pass
+        - Ran `pytest tests/` - all tests pass
         - Added test case in `tests/test_core.py::test_new_feature`
         - Verified with `examples/basic_example.py`
     validations:

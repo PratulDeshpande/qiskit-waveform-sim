@@ -46,8 +46,6 @@ def main():
     show_pulse_sheet(sim, interactive=True)
     show_iq_oscilloscope(sim, "d0", start_dt=0, length_dt=1000, interactive=True)
 
-    print("\nRun with interactive=True to see visualizations!")
-
 
 if __name__ == "__main__":
     main()

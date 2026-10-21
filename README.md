@@ -13,8 +13,6 @@
 
 ## Overview
 
-`qiskit-waveform-sim` bridges the post-Pulse waveform gap in Qiskit by providing a native, offline, lazy-evaluated waveform simulator that works directly with Qiskit's modern `Target` and `QuantumCircuit` APIs.
-
 With the deprecation and removal of `qiskit.pulse` in Qiskit 2.0, users need a way to inspect scheduled waveforms. This package provides an **analytical envelope generator** that synthesizes waveforms directly from instruction durations and gate names, overriding hardware calibrations with idealized standard physics (DRAG, GaussianSquare).
 
 > [!NOTE]
@@ -24,17 +22,17 @@ With the deprecation and removal of `qiskit.pulse` in Qiskit 2.0, users need a w
 |------|----------|------------------|------------------|--------------------|---------------------|
 | `qiskit.visualization.timeline` | Yes | No | No | No (markers only) | No |
 | `qiskit-ibm-runtime` `CircuitSchedule` | No (cloud only) | Yes (server) | No | No | No |
-| **qiskit-waveform-sim** | Yes | Yes | Yes | Yes Exact | Yes Lazy/Windowed |
+| **qiskit-waveform-sim** | Yes | No (Qiskit's scheduler rejects control flow) | Yes (`RX`, `RZZ`) | Yes Exact | Yes Lazy/Windowed |
 
 ## Features
 
 - **Lazy Windowed Evaluation**: `O(W)` memory for snippet extraction, independent of total circuit depth
 - **Exact Virtual-Z Frame Tracking**: Per-qubit phase accumulation propagated to drive and cross-resonance channels
 - **Analytical Envelope Synthesis**: DRAG (with leakage suppression), GaussianSquare (flat-top with pedestal correction)
-- **Fractional Gate Support**: Continuous parametric amplitude/duration scaling for `RX(θ)`, `RZZ(θ)`
-- **BoxOp & Annotation Native**: Custom `PulseEnvelopeAnnotation` with OpenQASM 3 & QPY serialization
+- **Fractional Gate Support**: Amplitude scaling for `RX(θ)`, `RZZ(θ)` (angles wrapped to [-π, π]; over-range amplitudes are clipped with a warning)
+- **BoxOp & Annotation Native**: Custom `PulseEnvelopeAnnotation` with OpenQASM 3 & QPY serialization, applied by the simulator whenever the circuit carries start times
 - **Interactive Visualization**: Plotly-based Pulse Sheet + synchronized I/Q Oscilloscope
-- **LabOne Q Compatible Architecture**: `OutputSimulator.get_snippet()`-style API
+- **LabOne Q-style Architecture**: `OutputSimulator.get_snippet()`-style API
 
 ---
 
@@ -90,7 +88,7 @@ show_iq_oscilloscope(sim, "d0", start_dt=0, length_dt=1000, interactive=True)
 
 ### Custom Pulse Annotations (Unscheduled Preview)
 
-For custom pulse shapes, use `BoxOp` with `PulseEnvelopeAnnotation`. Note: scheduling with `BoxOp` is not yet supported in Qiskit 2.0's transpiler. Use the unscheduled circuit for OpenQASM 3 export and manual waveform compilation.
+For custom pulse shapes, use `BoxOp` with `PulseEnvelopeAnnotation`. Note: Qiskit's preset scheduling passes do not yet accept circuits that contain `BoxOp`, so boxed circuits cannot be scheduled with `scheduling_method="alap"`. The annotations serialize to OpenQASM 3 and QPY today, and `TargetWaveformSimulator.compile()` applies them to any circuit that carries start times (see the annotations tutorial).
 
 ```python
 from qiskit_waveform_sim import PulseEnvelopeAnnotation, PulseAnnotationSerializer
@@ -126,12 +124,14 @@ print(qasm3_str)
 **Pillar 1: Target Parametric Binding**
 - `sx`/`x` → DRAG envelope (σ = D/4, β leakage suppression)
 - `rx(θ)` → DRAG with A(θ) = A_π · (θ/π)
-- `ecr`/`cx`/`rzz` → GaussianSquare on ControlChannel
-- `measure` → GaussianSquare on MeasureChannel + Acquire
+- `ecr`/`cx`/`rzz` → GaussianSquare cross-resonance pulses on ControlChannel `u(c,t)`
+- `cz` → uncalibrated flat-top stand-in on `u(c,t)`
+- `measure` → GaussianSquare on MeasureChannel `m{q}`
+- other gates that take time but have no model → a `UserWarning`
 
 **Pillar 2: PulseAnnotation Override (OpenQASM 3 + QPY)**
-- `@pulse_sim.drag(amp=0.5, beta=0.1, σ_ratio=0.25)`
-- `box { sx q[0]; }`
+- `@pulse_sim.envelope {'shape': 'drag', 'amp': 0.5, 'beta': 0.1, 'sigma_ratio': 0.25, 'risefall_dt': 16}`
+- `box[160dt] { sx q[0]; }`
 
 **Engine: FrameTracker + AnalyticalEnvelopes + Interval Indexing**
 - Virtual-Z: φ_q(t⁺) = φ_q(t⁻) - λ
@@ -160,7 +160,7 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guid
 1. Fork the repository
 2. Create a feature branch
 3. Run tests: `pytest -v`
-4. Run linters: `ruff check . && black --check . && mypy .`
+4. Run linters: `ruff check qiskit_waveform_sim tests examples && black --check qiskit_waveform_sim tests examples && mypy qiskit_waveform_sim`
 5. Submit a PR
 
 ---
@@ -181,6 +181,6 @@ If you use `qiskit-waveform-sim` in your research, please cite:
   title        = {qiskit-waveform-sim: Classical Control Waveform Simulator},
   year         = {2026},
   url          = {https://github.com/PratulDeshpande/qiskit-waveform-sim},
-  version      = {0.1.8}
+  version      = {0.2.0}
 }
 ```

@@ -105,8 +105,13 @@ Attach custom pulse shapes to specific gates using Qiskit 2.0's ``BoxOp`` and ``
 
    qc.measure([0, 1], [0, 1])
 
-   # Transpile, schedule, and compile as before...
-   # The custom annotation will be automatically applied
+.. note::
+
+   Qiskit's preset scheduling passes do not yet accept circuits that contain
+   ``BoxOp``, so this circuit cannot be scheduled with ``scheduling_method="alap"``.
+   The annotation is serialized to OpenQASM 3 and QPY (below), and
+   ``TargetWaveformSimulator.compile()`` applies it to any circuit that carries
+   start times. See :doc:`tutorials/annotations` for a worked example.
 
 Export to OpenQASM 3
 --------------------
@@ -119,7 +124,7 @@ Serialize circuits with pulse annotations to OpenQASM 3:
    from qiskit import qasm3
 
    qasm3_str = qasm3.dumps(
-       scheduled_qc, 
+       qc,
        annotation_handlers={"pulse_sim.envelope": PulseAnnotationSerializer()}
    )
    print(qasm3_str)

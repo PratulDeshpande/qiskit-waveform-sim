@@ -1,0 +1,23 @@
+# Runs the same checks as CI (same paths), using the tools installed by
+# `pip install -e ".[dev]"`.
+repos:
+  - repo: local
+    hooks:
+      - id: ruff
+        name: ruff
+        entry: ruff check
+        language: system
+        types: [python]
+        files: ^(qiskit_waveform_sim|tests|examples)/
+      - id: black
+        name: black
+        entry: black --check
+        language: system
+        types: [python]
+        files: ^(qiskit_waveform_sim|tests|examples)/
+      - id: mypy
+        name: mypy
+        entry: mypy qiskit_waveform_sim
+        language: system
+        pass_filenames: false
+        files: ^qiskit_waveform_sim/

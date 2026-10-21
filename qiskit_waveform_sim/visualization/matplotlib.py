@@ -12,6 +12,7 @@ import numpy as np
 from matplotlib.figure import Figure
 
 from qiskit_waveform_sim.core import TargetWaveformSimulator, WaveformSnippet
+from qiskit_waveform_sim.visualization._style import OP_COLORS, event_color
 
 
 def plot_pulse_sheet(
@@ -74,15 +75,6 @@ def plot_pulse_sheet(
 
     t_start_ns = t_start_dt * sim.dt * 1e9
     t_stop_ns = t_stop_dt * sim.dt * 1e9
-    op_colors = {
-        "drag": "#1f77b4",
-        "gaussian_square": "#2ca02c",
-        "virtual_z": "#ff7f0e",
-        "measure": "#d62728",
-        "ecr_echo_x": "#9467bd",
-        "default": "#7f7f7f",
-    }
-
     n_channels = len(display_channels)
     channel_height = 0.8 / n_channels
 
@@ -91,25 +83,45 @@ def plot_pulse_sheet(
         y_top = y_base + channel_height
         y_center = (y_base + y_top) / 2
 
-        events = sim.events_by_channel.get(channel, [])
-        visible_events = [
-            ev
-            for ev in events
-            if ev.start_dt + ev.duration_dt > t_start_dt and ev.start_dt < t_stop_dt
-        ]
+        for ev in sim.events_by_channel.get(channel, []):
+            if ev.duration_dt == 0:
+                # Zero-duration frame changes are drawn as markers, not blocks
+                if (
+                    ev.shape == "virtual_z"
+                    and show_phase_markers
+                    and t_start_dt <= ev.start_dt <= t_stop_dt
+                ):
+                    marker_ns = ev.start_dt * sim.dt * 1e9
+                    ax.axvline(
+                        marker_ns,
+                        ymin=y_base,
+                        ymax=y_top,
+                        color="red",
+                        linestyle="--",
+                        linewidth=1,
+                        alpha=0.8,
+                    )
+                    ax.text(
+                        marker_ns,
+                        y_top + 0.02,
+                        f"φ={ev.frame_phase_rad:.2f}",
+                        ha="center",
+                        va="bottom",
+                        fontsize=7,
+                        color="red",
+                        rotation=90,
+                    )
+                continue
+            if ev.start_dt + ev.duration_dt <= t_start_dt or ev.start_dt >= t_stop_dt:
+                continue
 
-        for ev in visible_events:
-            ev_start_ns = ev.start_dt * sim.dt * 1e9
-            ev_stop_ns = (ev.start_dt + ev.duration_dt) * sim.dt * 1e9
-
-            ev_start_ns = max(ev_start_ns, t_start_ns)
-            ev_stop_ns = min(ev_stop_ns, t_stop_ns)
+            ev_start_ns = max(ev.start_dt * sim.dt * 1e9, t_start_ns)
+            ev_stop_ns = min((ev.start_dt + ev.duration_dt) * sim.dt * 1e9, t_stop_ns)
             ev_duration_ns = ev_stop_ns - ev_start_ns
-
             if ev_duration_ns <= 0:
                 continue
 
-            color = op_colors.get(ev.shape, op_colors["default"])
+            color = event_color(ev)
             rect = mpatches.Rectangle(
                 (ev_start_ns, y_base + 0.05 * channel_height),
                 ev_duration_ns,
@@ -120,36 +132,16 @@ def plot_pulse_sheet(
                 linewidth=0.5,
             )
             ax.add_patch(rect)
-
-            # Label
-            if ev.shape != "virtual_z" or ev.duration_dt > 0:
-                label = ev.op_name
-                ax.text(
-                    (ev_start_ns + ev_stop_ns) / 2,
-                    y_center,
-                    label,
-                    ha="center",
-                    va="center",
-                    fontsize=8,
-                    color="white",
-                    fontweight="bold" if ev.shape == "drag" else "normal",
-                )
-
-            # Virtual Z marker
-            if ev.shape == "virtual_z" and show_phase_markers:
-                ax.axvline(
-                    ev_start_ns, color="red", linestyle="--", linewidth=1, alpha=0.8
-                )
-                ax.text(
-                    ev_start_ns,
-                    y_top + 0.02,
-                    f"φ={ev.frame_phase_rad:.2f}",
-                    ha="center",
-                    va="bottom",
-                    fontsize=7,
-                    color="red",
-                    rotation=90,
-                )
+            ax.text(
+                (ev_start_ns + ev_stop_ns) / 2,
+                y_center,
+                ev.op_name,
+                ha="center",
+                va="center",
+                fontsize=8,
+                color="white",
+                fontweight="bold" if ev.shape == "drag" else "normal",
+            )
         ax.text(
             t_start_ns - (t_stop_ns - t_start_ns) * 0.02,
             y_center,
@@ -169,16 +161,17 @@ def plot_pulse_sheet(
 
     # Legend
     legend_elements = [
-        mpatches.Patch(color=op_colors["drag"], label="Single-Qubit (DRAG)"),
+        mpatches.Patch(color=OP_COLORS["drag"], label="Single-Qubit (DRAG)"),
         mpatches.Patch(
-            color=op_colors["gaussian_square"],
-            label="Two-Qubit/Measure (GaussianSquare)",
+            color=OP_COLORS["gaussian_square"],
+            label="Two-Qubit (GaussianSquare)",
         ),
-        mpatches.Patch(color=op_colors["virtual_z"], label="Virtual-Z"),
+        mpatches.Patch(color=OP_COLORS["measure"], label="Measure"),
+        mpatches.Patch(color=OP_COLORS["virtual_z"], label="Virtual-Z"),
     ]
     ax.legend(handles=legend_elements, loc="upper right", fontsize=9)
 
-    plt.tight_layout()
+    fig.tight_layout()
     return fig
 
 
@@ -197,8 +190,9 @@ def plot_iq_waveforms(
     ----------
     snippet : WaveformSnippet
         Waveform snippet from TargetWaveformSimulator.get_snippet()
-    ax : plt.Axes or array of Axes, optional
-        Existing axes (2 or 3 axes for I/Q/Phase)
+    ax : plt.Axes or sequence of Axes, optional
+        Existing axes: 2 (I, Q) or 3 (I, Q, phase) when ``show_phase`` is True.
+        Raises ``ValueError`` if fewer axes are given than needed.
     figsize : Tuple[float, float]
         Figure size if creating new figure
     show_envelope : bool
@@ -220,14 +214,16 @@ def plot_iq_waveforms(
 
     n_rows = 2 + (1 if show_phase else 0)
     if ax is None:
-        fig, axes = plt.subplots(n_rows, 1, figsize=figsize, sharex=True)
+        fig, axes_arr = plt.subplots(n_rows, 1, figsize=figsize, sharex=True)
+        axes = list(np.ravel(axes_arr))
     else:
-        axes = [ax] if not isinstance(ax, (list, np.ndarray)) else ax
-        fig = axes[0].figure
+        axes = list(np.ravel(ax)) if isinstance(ax, (list, tuple, np.ndarray)) else [ax]
         if len(axes) < n_rows:
-            for _ in range(n_rows - len(axes)):
-                new_ax = fig.add_subplot(n_rows, 1, len(axes) + 1, sharex=axes[0])
-                axes.append(new_ax)
+            raise ValueError(
+                f"plot_iq_waveforms needs {n_rows} axes (I, Q"
+                f"{', phase' if show_phase else ''}), got {len(axes)}"
+            )
+        fig = axes[0].figure
 
     # I component
     axes[0].plot(time_ns, wave.real, label="I (Real)", color="#1f77b4", linewidth=0.8)
@@ -294,7 +290,7 @@ def plot_iq_waveforms(
                     },
                 )
 
-    plt.tight_layout()
+    fig.tight_layout()
     return fig
 
 
@@ -352,7 +348,7 @@ def plot_multi_channel_iq(
     axes[-1, 1].set_xlabel("Time (ns)", fontsize=11)
 
     fig.suptitle("Multi-Channel I/Q Waveforms", fontsize=14, fontweight="bold")
-    plt.tight_layout()
+    fig.tight_layout()
     return fig
 
 
@@ -422,5 +418,5 @@ def plot_phase_tracking(
     ax.legend(fontsize=9, loc="upper right")
     ax.grid(True, alpha=0.3)
 
-    plt.tight_layout()
+    fig.tight_layout()
     return fig

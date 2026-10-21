@@ -1,11 +1,18 @@
 # Configuration file for the Sphinx documentation builder.
 
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _package_version
+
 # -- Project information -----------------------------------------------------
 project = 'qiskit-waveform-sim'
 copyright = '2026, Pratul Deshpande'
 author = 'Pratul Deshpande'
-release = '0.1.8'
-version = '0.1.8'
+try:
+    # Read from the installed package so docs never drift from pyproject.toml
+    release = _package_version('qiskit-waveform-sim')
+except PackageNotFoundError:
+    release = '0.0.0+unknown'
+version = release
 
 # -- General configuration ---------------------------------------------------
 extensions = [

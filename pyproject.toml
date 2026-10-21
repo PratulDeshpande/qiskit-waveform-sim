@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "qiskit-waveform-sim"
-version = "0.1.8"
+version = "0.2.0"
 description = "Zero-bloat Classical Control Waveform Simulator and Interactive Pulse Sheet Viewer"
 readme = "README.md"
 license = "Apache-2.0"
@@ -53,8 +53,8 @@ dev = [
     "pre-commit>=3.5",
 ]
 docs = [
-    "sphinx>=9.0.4",
-    "qiskit-sphinx-theme>=2.0",
+    "sphinx>=9.0.4,<10",
+    "qiskit-sphinx-theme>=2.1",
     "myst-parser>=2.0",
     "nbsphinx>=0.9.8",
     "jupyter>=1.0",
@@ -95,6 +95,10 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "SIM", "T20"]
 ignore = ["E501", "B008"]
+
+[tool.ruff.lint.per-file-ignores]
+# Examples are scripts: printing progress is their job
+"examples/*" = ["T201"]
 
 [tool.mypy]
 python_version = "3.11"

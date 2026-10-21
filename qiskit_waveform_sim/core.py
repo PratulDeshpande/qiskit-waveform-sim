@@ -8,6 +8,7 @@ Virtual-Z frame tracking, matching LabOne Q OutputSimulator architecture.
 from __future__ import annotations
 
 import bisect
+import math
 import warnings
 from dataclasses import dataclass, field
 from typing import Any
@@ -17,8 +18,10 @@ from qiskit import QuantumCircuit, qasm3
 from qiskit.circuit import BoxOp
 from qiskit.transpiler import Target
 
-from qiskit_waveform_sim import PulseAnnotationSerializer
-from qiskit_waveform_sim.annotations import PulseEnvelopeAnnotation
+from qiskit_waveform_sim.annotations import (
+    PulseAnnotationSerializer,
+    PulseEnvelopeAnnotation,
+)
 
 
 @dataclass(frozen=True)
@@ -90,8 +93,10 @@ class AnalyticalEnvelopes:
         """
         DRAG (Derivative Removal by Adiabatic Gate) envelope with pedestal correction.
 
-        The Q quadrature is windowed by the normalized Gaussian to ensure
-        zero boundary conditions on both I and Q components.
+        The I quadrature is a pedestal-corrected Gaussian that is exactly zero at
+        the pulse edges. The Q quadrature is beta times its time derivative,
+        matching Qiskit's ``Drag`` definition; it is small but not exactly zero
+        at the edges.
 
         Parameters
         ----------
@@ -109,9 +114,8 @@ class AnalyticalEnvelopes:
         Returns
         -------
         np.ndarray
-            Complex baseband envelope Ω(t) = A[g_norm(t) - iβ d(g_norm)/dt]
-            with zero boundary conditions on both real and imaginary parts.
-            The Q quadrature is -β times the derivative of the I quadrature envelope.
+            Complex baseband envelope Ω(t) = A[g_norm(t) + iβ d(g_norm)/dt].
+            The Q quadrature is +β times the derivative of the I quadrature envelope.
         """
         if abs(amp) > 1.0 + 1e-12:
             raise ValueError(
@@ -188,6 +192,41 @@ class AnalyticalEnvelopes:
         return amp * env
 
 
+_SECONDS_PER_UNIT = {"s": 1.0, "ms": 1e-3, "us": 1e-6, "ns": 1e-9, "ps": 1e-12}
+
+# Operations that occupy time but legitimately emit no drive waveform
+_IDLE_OPS = frozenset({"id", "reset", "delay", "barrier"})
+
+
+def _float_param(op: Any) -> float:
+    """First gate parameter as a float, with a clear error if it is unbound."""
+    param = op.params[0]
+    try:
+        return float(param)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"Gate '{op.name}' has an unbound parameter ({param}). "
+            "Bind all parameters with QuantumCircuit.assign_parameters() before compile()."
+        ) from exc
+
+
+def _wrapped_angle(op: Any) -> float:
+    """Rotation angle wrapped into [-pi, pi]; rotations are 2*pi periodic."""
+    return math.remainder(_float_param(op), 2.0 * math.pi)
+
+
+def _full_scale(amp: float, op_name: str) -> float:
+    """Clip an amplitude to the DAC full-scale range, warning when it does."""
+    if abs(amp) <= 1.0:
+        return amp
+    warnings.warn(
+        f"Amplitude {amp:.3f} for '{op_name}' exceeds DAC full-scale and was clipped to 1.0",
+        UserWarning,
+        stacklevel=4,
+    )
+    return math.copysign(1.0, amp)
+
+
 class TargetWaveformSimulator:
     """
     LabOne Q OutputSimulator equivalent for Qiskit 2.0+ scheduled circuits.
@@ -229,6 +268,7 @@ class TargetWaveformSimulator:
         self.phase_history: dict[int, list[tuple[int, float]]] = {}
         self.total_duration_dt: int = 0
         self._num_qubits: int = 0
+        self._warned_ops: set[str] = set()
 
     def compile(self, scheduled_qc: QuantumCircuit) -> TargetWaveformSimulator:
         """
@@ -254,10 +294,11 @@ class TargetWaveformSimulator:
         qubit_phase: dict[int, float] = dict.fromkeys(range(self._num_qubits), 0.0)
         self.phase_history = {q: [(0, 0.0)] for q in range(self._num_qubits)}
         self.events_by_channel.clear()
+        self._warned_ops = set()
         max_stop_dt = 0
 
         for inst, start_dt in zip(
-            scheduled_qc.data, scheduled_qc.op_start_times, strict=False
+            scheduled_qc.data, scheduled_qc.op_start_times, strict=True
         ):
             op = inst.operation
             q_indices = tuple(scheduled_qc.find_bit(q).index for q in inst.qubits)
@@ -287,42 +328,9 @@ class TargetWaveformSimulator:
         if op.name in ("rz", "barrier"):
             return 0
         if op.name == "delay":
-            # Handle Delay unit conversion: duration can be in s, ms, us, ns, ps, dt
-            dur = op.duration
-            unit = getattr(op, "unit", "dt")
-            if unit == "dt":
-                return int(dur)
-            elif unit == "s":
-                return int(round(dur / self.dt))
-            elif unit == "ms":
-                return int(round(dur * 1e-3 / self.dt))
-            elif unit == "us":
-                return int(round(dur * 1e-6 / self.dt))
-            elif unit == "ns":
-                return int(round(dur * 1e-9 / self.dt))
-            elif unit == "ps":
-                return int(round(dur * 1e-12 / self.dt))
-            else:
-                return int(dur)
-        if isinstance(op, BoxOp) and op.duration is not None:
-            # BoxOp duration may be in different units
-            if op.unit == "dt":
-                return int(op.duration)
-            elif op.unit == "s":
-                return int(round(op.duration / self.dt))
-            elif op.unit == "ms":
-                return int(round(op.duration * 1e-3 / self.dt))
-            elif op.unit == "us":
-                return int(round(op.duration * 1e-6 / self.dt))
-            elif op.unit == "ns":
-                return int(round(op.duration * 1e-9 / self.dt))
-            elif op.unit == "ps":
-                return int(round(op.duration * 1e-12 / self.dt))
-            elif op.unit == "expr":
-                # Stretch/Expr - cannot determine statically, use fallback
-                pass
-            else:
-                return int(op.duration)  # Assume dt
+            return self._to_dt(op.duration, getattr(op, "unit", "dt"))
+        if isinstance(op, BoxOp):
+            return self._box_duration_dt(op) or 0
         if op.name in self.target and q_indices in self.target[op.name]:
             props = self.target[op.name][q_indices]
             if props and props.duration is not None:
@@ -347,7 +355,6 @@ class TargetWaveformSimulator:
             "cx",
             "delay",
             "barrier",
-            "rz",
         ):
             warnings.warn(
                 f"Unknown operation '{op.name}' on qubits {q_indices}, using fallback duration of 160 dt",
@@ -363,6 +370,7 @@ class TargetWaveformSimulator:
         start_dt: int,
         qubit_phase: dict[int, float],
         override_ann: Any | None = None,
+        duration_override: int | None = None,
     ) -> int:
         """
         Recursively lower an operation to channel events with frame tracking.
@@ -371,30 +379,17 @@ class TargetWaveformSimulator:
         """
         # Handle Qiskit 2.x BoxOp containers and inspect custom PulseEnvelopeAnnotations
         if isinstance(op, BoxOp):
-            box_ann = override_ann
-            for ann in op.annotations:
-                if isinstance(ann, PulseEnvelopeAnnotation):
-                    box_ann = ann
-            cursor_dt = start_dt
-            for sub_inst in op.body.data:
-                sub_q = tuple(
-                    q_indices[op.body.find_bit(q).index] for q in sub_inst.qubits
-                )
-                cursor_dt = self._lower_instruction(
-                    sub_inst.operation,
-                    sub_q,
-                    cursor_dt,
-                    qubit_phase,
-                    override_ann=box_ann,
-                )
-            box_dur = self._get_duration_dt(op, q_indices)
-            return max(cursor_dt, start_dt + box_dur)
+            return self._lower_box(op, q_indices, start_dt, qubit_phase, override_ann)
 
-        dur_dt = self._get_duration_dt(op, q_indices)
+        dur_dt = (
+            duration_override
+            if duration_override is not None
+            else self._get_duration_dt(op, q_indices)
+        )
         stop_dt = start_dt + dur_dt
 
         if op.name == "rz":
-            lam = float(op.params[0])
+            lam = _float_param(op)
             q0 = q_indices[0]
             qubit_phase[q0] -= lam
             self.phase_history[q0].append((start_dt, qubit_phase[q0]))
@@ -418,21 +413,6 @@ class TargetWaveformSimulator:
         if len(q_indices) == 1 and op.name in ("sx", "x", "rx"):
             q0 = q_indices[0]
 
-            # Try to extract amplitude from Target calibration
-            has_cal = False
-            try:
-                if op.name in self.target and q_indices in self.target[op.name]:
-                    cal = getattr(self.target[op.name][q_indices], "calibration", None)
-                    if cal is not None:
-                        has_cal = True
-            except (KeyError, AttributeError):
-                pass
-
-            if has_cal:
-                # We could attempt to parse the ScheduleBlock here.
-                # For now, we note that it's uncalibrated analytical generation.
-                pass
-
             if override_ann is not None:
                 shape = override_ann.shape
                 amp = override_ann.amp
@@ -451,8 +431,7 @@ class TargetWaveformSimulator:
                 elif op.name == "x":
                     amp = 0.90
                 else:
-                    theta = float(op.params[0])
-                    amp = 0.90 * (theta / np.pi)
+                    amp = 0.90 * (_wrapped_angle(op) / np.pi)
 
             self._append_event(
                 ChannelEvent(
@@ -470,33 +449,50 @@ class TargetWaveformSimulator:
                 )
             )
 
-        elif len(q_indices) == 2 and op.name in ("cx", "ecr", "rzz"):
+        elif len(q_indices) == 2 and op.name in ("cx", "ecr", "rzz", "cz"):
             c_q, t_q = q_indices
-            scale = (float(op.params[0]) / (0.5 * np.pi)) if op.name == "rzz" else 1.0
+            scale = (_wrapped_angle(op) / (0.5 * np.pi)) if op.name == "rzz" else 1.0
+            # Pair-channel tones are driven at the target frequency: target frame
+            cr_phase = qubit_phase[t_q]
+            if override_ann is not None:
+                cr_shape = override_ann.shape
+                cr_amp = complex(_full_scale(override_ann.amp * scale, op.name))
+                cr_risefall = override_ann.risefall_dt
+                cr_beta = override_ann.beta
+                cr_sigma_ratio: float | None = override_ann.sigma_ratio
+            else:
+                # Uncalibrated Analytical Fallback for CR amplitude
+                cr_shape = "gaussian_square"
+                cr_amp = complex(_full_scale(0.65 * scale, op.name))
+                cr_risefall = 16
+                cr_beta, cr_sigma_ratio = 0.0, None
 
-            # Uncalibrated Analytical Fallback for CR amplitude
-            cr_amp = complex(0.65 * scale)
-
-            if op.name == "ecr":
-                x_dur = min(
-                    160, dur_dt // 3
-                )  # Echo X is a fixed short pulse (e.g. 160dt)
-                cr_dur = (dur_dt - x_dur) // 2
-
+            def pair_pulse(t0: int, dur: int, name: str, phase: float) -> None:
                 self._append_event(
                     ChannelEvent(
                         channel=f"u({c_q},{t_q})",
-                        start_dt=start_dt,
-                        duration_dt=cr_dur,
-                        op_name=f"{op.name}_cr+",
+                        start_dt=t0,
+                        duration_dt=dur,
+                        op_name=name,
                         qubits=q_indices,
-                        frame_phase_rad=qubit_phase[c_q],
-                        shape="gaussian_square",
+                        frame_phase_rad=phase,
+                        shape=cr_shape,
                         amp=cr_amp,
-                        risefall_dt=16,
+                        beta=cr_beta,
+                        sigma_dt=(
+                            dur * cr_sigma_ratio if cr_sigma_ratio is not None else 16.0
+                        ),
+                        risefall_dt=cr_risefall,
                     )
                 )
 
+            if op.name == "cz":
+                # Uncalibrated flat-top stand-in for a coupler-driven CZ
+                pair_pulse(start_dt, dur_dt, "cz", cr_phase)
+            elif op.name == "ecr":
+                x_dur = min(160, dur_dt // 3)  # Echo X is a fixed short pulse
+                cr_dur = (dur_dt - x_dur) // 2
+                pair_pulse(start_dt, cr_dur, f"{op.name}_cr+", cr_phase)
                 self._append_event(
                     ChannelEvent(
                         channel=f"d{c_q}",
@@ -512,49 +508,20 @@ class TargetWaveformSimulator:
                         risefall_dt=16,
                     )
                 )
-
-                self._append_event(
-                    ChannelEvent(
-                        channel=f"u({c_q},{t_q})",
-                        start_dt=start_dt + cr_dur + x_dur,
-                        duration_dt=dur_dt - cr_dur - x_dur,
-                        op_name=f"{op.name}_cr-",
-                        qubits=q_indices,
-                        frame_phase_rad=qubit_phase[c_q] + np.pi,
-                        shape="gaussian_square",
-                        amp=cr_amp,
-                        risefall_dt=16,
-                    )
+                pair_pulse(
+                    start_dt + cr_dur + x_dur,
+                    dur_dt - cr_dur - x_dur,
+                    f"{op.name}_cr-",
+                    cr_phase + np.pi,
                 )
-
             else:
                 half_dur = dur_dt // 2
-                self._append_event(
-                    ChannelEvent(
-                        channel=f"u({c_q},{t_q})",
-                        start_dt=start_dt,
-                        duration_dt=half_dur,
-                        op_name=f"{op.name}_cr+",
-                        qubits=q_indices,
-                        frame_phase_rad=qubit_phase[c_q],
-                        shape="gaussian_square",
-                        amp=cr_amp,
-                        risefall_dt=16,
-                    )
-                )
-
-                self._append_event(
-                    ChannelEvent(
-                        channel=f"u({c_q},{t_q})",
-                        start_dt=start_dt + half_dur,
-                        duration_dt=dur_dt - half_dur,
-                        op_name=f"{op.name}_cr-",
-                        qubits=q_indices,
-                        frame_phase_rad=qubit_phase[c_q] + np.pi,
-                        shape="gaussian_square",
-                        amp=cr_amp,
-                        risefall_dt=16,
-                    )
+                pair_pulse(start_dt, half_dur, f"{op.name}_cr+", cr_phase)
+                pair_pulse(
+                    start_dt + half_dur,
+                    dur_dt - half_dur,
+                    f"{op.name}_cr-",
+                    cr_phase + np.pi,
                 )
 
         elif op.name == "measure":
@@ -573,6 +540,86 @@ class TargetWaveformSimulator:
                     )
                 )
 
+        elif (
+            dur_dt > 0 and op.name not in _IDLE_OPS and op.name not in self._warned_ops
+        ):
+            self._warned_ops.add(op.name)
+            warnings.warn(
+                f"Gate '{op.name}' on qubits {q_indices} has no waveform model; "
+                f"its {dur_dt} dt are left empty on the pulse sheet",
+                UserWarning,
+                stacklevel=3,
+            )
+
+        return stop_dt
+
+    def _box_duration_dt(self, op: BoxOp) -> int | None:
+        """Static box duration in dt, or None when the box has no fixed duration."""
+        if op.duration is None or op.unit == "expr":
+            return None
+        return self._to_dt(op.duration, op.unit)
+
+    def _to_dt(self, duration: float, unit: str) -> int:
+        """Convert a duration in `unit` (s, ms, us, ns, ps or dt) to whole dt."""
+        if unit in _SECONDS_PER_UNIT:
+            return int(round(duration * _SECONDS_PER_UNIT[unit] / self.dt))
+        return int(duration)
+
+    def _lower_box(
+        self,
+        op: BoxOp,
+        q_indices: tuple[int, ...],
+        start_dt: int,
+        qubit_phase: dict[int, float],
+        override_ann: Any | None,
+    ) -> int:
+        """
+        Lower a BoxOp body.
+
+        Instructions on different qubits run in parallel (one cursor per qubit).
+        A box with a fixed duration around a single pulse gate sets that gate's
+        duration; a box without a duration lasts as long as its contents.
+        """
+        box_ann = override_ann
+        for ann in op.annotations:
+            if isinstance(ann, PulseEnvelopeAnnotation):
+                box_ann = ann
+        box_dur = self._box_duration_dt(op)
+        body = list(op.body.data)
+        pulse_idx = [
+            i
+            for i, inst in enumerate(body)
+            if inst.operation.name not in ("rz", "barrier", "delay")
+        ]
+        sized_idx = (
+            pulse_idx[0] if box_dur is not None and len(pulse_idx) == 1 else None
+        )
+
+        cursors: dict[int, int] = {}
+        stop_dt = start_dt
+        for i, sub_inst in enumerate(body):
+            sub_q = tuple(q_indices[op.body.find_bit(q).index] for q in sub_inst.qubits)
+            t0 = max((cursors.get(q, start_dt) for q in sub_q), default=start_dt)
+            end_dt = self._lower_instruction(
+                sub_inst.operation,
+                sub_q,
+                t0,
+                qubit_phase,
+                override_ann=box_ann,
+                # The sized gate gets whatever box time is left after earlier
+                # instructions on its qubits (e.g. a leading delay)
+                duration_override=(
+                    max(0, box_dur - (t0 - start_dt))
+                    if i == sized_idx and box_dur is not None
+                    else None
+                ),
+            )
+            for q in sub_q:
+                cursors[q] = end_dt
+            stop_dt = max(stop_dt, end_dt)
+
+        if box_dur is not None:
+            stop_dt = max(stop_dt, start_dt + box_dur)
         return stop_dt
 
     def _append_event(self, event: ChannelEvent) -> None:
@@ -635,11 +682,8 @@ class TargetWaveformSimulator:
         # Pre-fill phase_trace with piecewise constant frame phase
         for i in range(len(phase_hist)):
             t_change, phase_val = phase_hist[i]
-            t_next = (
-                phase_hist[i + 1][0]
-                if i + 1 < len(phase_hist)
-                else self.total_duration_dt + length_dt
-            )
+            # The last frame phase holds until the end of the requested window
+            t_next = phase_hist[i + 1][0] if i + 1 < len(phase_hist) else stop_dt
 
             w_start = max(start_dt, t_change)
             w_stop = min(stop_dt, t_next)
@@ -671,7 +715,8 @@ class TargetWaveformSimulator:
             if ev.start_dt >= stop_dt:
                 break
             ev_stop = ev.start_dt + ev.duration_dt
-            if ev_stop < start_dt:
+            # Pulses ending exactly at the window start do not overlap it
+            if ev_stop < start_dt or (ev_stop == start_dt and ev.duration_dt > 0):
                 continue
             overlapping.append(ev)
             if ev.duration_dt == 0:
@@ -746,20 +791,8 @@ class TargetWaveformSimulator:
         str
             OpenQASM 3 string with pulse annotation pragmas
         """
-        # Check if qasm3 supports annotation_handlers (added in Qiskit 2.1+)
-        import inspect
-
-        from qiskit.qasm3 import Exporter
-
-        supports_annotation_handlers = (
-            "annotation_handlers" in inspect.signature(Exporter.__init__).parameters
-        )
-
-        if supports_annotation_handlers:
-            handlers = {"pulse_sim.envelope": PulseAnnotationSerializer()}
-            if annotation_handlers:
-                handlers.update(annotation_handlers)
-            return qasm3.dumps(scheduled_qc, annotation_handlers=handlers)  # type: ignore[no-any-return]
-        else:
-            # Fallback: export without annotation handlers
-            return qasm3.dumps(scheduled_qc)  # type: ignore[no-any-return]
+        # annotation_handlers is available on every supported Qiskit (>= 2.5)
+        handlers = {"pulse_sim.envelope": PulseAnnotationSerializer()}
+        if annotation_handlers:
+            handlers.update(annotation_handlers)
+        return qasm3.dumps(scheduled_qc, annotation_handlers=handlers)  # type: ignore[no-any-return]

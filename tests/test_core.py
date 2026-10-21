@@ -15,39 +15,6 @@ from qiskit_waveform_sim.core import (
 )
 
 
-# Check if Qiskit supports BoxOp annotations (added in Qiskit 2.1+)
-def _has_boxop_annotations():
-    """Check if Qiskit version supports BoxOp annotations."""
-    from qiskit.circuit import BoxOp
-
-    return (
-        hasattr(BoxOp, "annotations")
-        or "annotations" in BoxOp.__init__.__code__.co_varnames
-    )
-
-
-# Check if qasm3 supports annotation_handlers
-def _has_qasm3_annotation_handlers():
-    """Check if qasm3 supports annotation_handlers parameter."""
-    import inspect
-
-    from qiskit.qasm3 import Exporter
-
-    return "annotation_handlers" in inspect.signature(Exporter.__init__).parameters
-
-
-@pytest.fixture
-def has_boxop_annotations():
-    """Fixture indicating if BoxOp annotations are supported."""
-    return _has_boxop_annotations()
-
-
-@pytest.fixture
-def has_qasm3_annotation_handlers():
-    """Fixture indicating if qasm3 annotation_handlers are supported."""
-    return _has_qasm3_annotation_handlers()
-
-
 class TestAnalyticalEnvelopes:
     """Tests for analytical envelope evaluators."""
 
@@ -333,10 +300,8 @@ class TestTargetWaveformSimulator:
         # Should have non-zero phase evolution from IF
         assert np.any(np.abs(phase_diff) > 1e-3)
 
-    def test_boxop_annotation_attachment(self, has_boxop_annotations):
+    def test_boxop_annotation_attachment(self):
         """Test BoxOp custom annotation attachment and QPY round-trip."""
-        if not has_boxop_annotations:
-            pytest.skip("BoxOp annotations not supported in this Qiskit version")
         import io
 
         from qiskit import QuantumCircuit, qpy
@@ -376,14 +341,8 @@ class TestTargetWaveformSimulator:
         assert len(loaded_box.annotations) == 1
         assert loaded_box.annotations[0] == ann
 
-    def test_boxop_annotation_openqasm3_export(
-        self, has_boxop_annotations, has_qasm3_annotation_handlers
-    ):
+    def test_boxop_annotation_openqasm3_export(self):
         """Test BoxOp annotation exports to OpenQASM 3 with pulse pragmas."""
-        if not has_boxop_annotations or not has_qasm3_annotation_handlers:
-            pytest.skip(
-                "BoxOp annotations or qasm3 annotation_handlers not supported in this Qiskit version"
-            )
         from qiskit import QuantumCircuit, qasm3
 
         from qiskit_waveform_sim import (
@@ -417,3 +376,300 @@ class TestTargetWaveformSimulator:
         assert isinstance(qasm3_str, str)
         assert len(qasm3_str) > 0
         assert "OPENQASM 3" in qasm3_str
+
+
+DT = 0.222e-9
+
+
+def _fractional_target():
+    """Target with native fractional rx/rzz (like IBM fractional-gate backends)."""
+    from qiskit.circuit import Parameter
+    from qiskit.circuit.library import Measure, RXGate, RZGate, RZZGate, SXGate
+    from qiskit.transpiler import InstructionProperties, Target
+
+    theta = Parameter("theta")
+    one_q = {(q,): InstructionProperties(duration=160 * DT) for q in range(2)}
+    target = Target(num_qubits=2, dt=DT)
+    target.add_instruction(RXGate(theta), dict(one_q))
+    target.add_instruction(SXGate(), dict(one_q))
+    target.add_instruction(
+        RZGate(theta), {(q,): InstructionProperties(duration=0.0) for q in range(2)}
+    )
+    target.add_instruction(
+        RZZGate(theta), {(0, 1): InstructionProperties(duration=1600 * DT)}
+    )
+    target.add_instruction(
+        Measure(), {(q,): InstructionProperties(duration=1600 * DT) for q in range(2)}
+    )
+    return target
+
+
+def _schedule_on(target, qc):
+    pm = generate_preset_pass_manager(
+        optimization_level=0, target=target, scheduling_method="alap"
+    )
+    return pm.run(qc)
+
+
+def _phase_at(sim, qubit, t_dt):
+    """Frame phase of `qubit` in effect at time t_dt, read from phase history."""
+    return [p for t, p in sim.get_phase_history(qubit) if t <= t_dt][-1]
+
+
+class TestFramesAnglesAndWindows:
+    """Regression tests for CR frame, fractional angles and snippet windows."""
+
+    def test_cr_pulse_uses_target_frame(self, backend_2q):
+        qc = QuantumCircuit(2)
+        qc.rz(1.0, 0)
+        qc.rz(0.3, 1)
+        qc.cx(0, 1)
+        sim = TargetWaveformSimulator(backend_2q.target).compile(
+            generate_preset_pass_manager(
+                optimization_level=1, backend=backend_2q, scheduling_method="alap"
+            ).run(qc)
+        )
+
+        cr_plus = next(
+            e for e in sim.events_by_channel["u(0,1)"] if e.op_name.endswith("cr+")
+        )
+        target_phase = _phase_at(sim, 1, cr_plus.start_dt)
+        assert target_phase != _phase_at(sim, 0, cr_plus.start_dt)
+        assert cr_plus.frame_phase_rad == pytest.approx(target_phase)
+
+        snippet = sim.get_snippet("u(0,1)", cr_plus.start_dt, cr_plus.duration_dt)
+        assert snippet.phase_rad[cr_plus.duration_dt // 2] == pytest.approx(
+            target_phase
+        )
+
+    def test_large_rx_angle_does_not_crash(self):
+        target = _fractional_target()
+        qc = QuantumCircuit(1)
+        qc.rx(4.0, 0)
+
+        sim = TargetWaveformSimulator(target).compile(_schedule_on(target, qc))
+
+        (ev,) = [e for e in sim.events_by_channel["d0"] if e.op_name == "rx"]
+        # rx(4.0) == rx(4.0 - 2*pi): amplitude follows the wrapped angle
+        assert ev.amp.real == pytest.approx(0.90 * (4.0 - 2 * np.pi) / np.pi)
+
+    def test_large_rzz_angle_clipped_with_warning(self):
+        target = _fractional_target()
+        qc = QuantumCircuit(2)
+        qc.rzz(np.pi, 0, 1)
+
+        with pytest.warns(UserWarning, match="clipped"):
+            sim = TargetWaveformSimulator(target).compile(_schedule_on(target, qc))
+
+        amps = [abs(e.amp) for e in sim.events_by_channel["u(0,1)"]]
+        assert amps and all(a == pytest.approx(1.0) for a in amps)
+
+    def test_unbound_parameter_raises_clear_error(self):
+        from qiskit.circuit import Parameter
+
+        target = _fractional_target()
+        qc = QuantumCircuit(1)
+        qc.rx(Parameter("a"), 0)
+        scheduled = _schedule_on(target, qc)
+
+        with pytest.raises(ValueError, match="unbound"):
+            TargetWaveformSimulator(target).compile(scheduled)
+
+    def test_phase_trace_holds_after_circuit_end(self, backend_2q):
+        qc = QuantumCircuit(1)
+        qc.rz(1.0, 0)
+        qc.sx(0)
+        sim = TargetWaveformSimulator(backend_2q.target).compile(
+            generate_preset_pass_manager(
+                optimization_level=1, backend=backend_2q, scheduling_method="alap"
+            ).run(qc)
+        )
+        final_phase = sim.get_phase_history(0)[-1][1]
+        assert final_phase != 0.0
+
+        snippet = sim.get_snippet("d0", sim.total_duration_dt + 500, 100)
+
+        assert np.allclose(snippet.phase_rad, final_phase)
+
+    def test_snippet_excludes_events_ending_at_window_start(self, compiled_simulator):
+        pulse = next(
+            e for e in compiled_simulator.events_by_channel["d0"] if e.duration_dt > 0
+        )
+
+        snippet = compiled_simulator.get_snippet(
+            "d0", pulse.start_dt + pulse.duration_dt, 10
+        )
+
+        assert pulse not in snippet.events
+
+
+class TestGateCoverage:
+    """Every pulse-bearing gate either produces a waveform or says why not."""
+
+    def test_cz_gate_produces_control_channel_waveform(self):
+        from qiskit.providers.fake_provider import GenericBackendV2
+
+        backend = GenericBackendV2(
+            num_qubits=2, basis_gates=["cz", "id", "rz", "sx", "x"], seed=42
+        )
+        qc = QuantumCircuit(2)
+        qc.cz(0, 1)
+        scheduled = generate_preset_pass_manager(
+            optimization_level=0, backend=backend, scheduling_method="alap"
+        ).run(qc)
+
+        sim = TargetWaveformSimulator(backend.target).compile(scheduled)
+
+        cz_events = [
+            e for e in sim.events_by_channel.get("u(0,1)", []) if e.op_name == "cz"
+        ]
+        assert len(cz_events) == 1
+        ev = cz_events[0]
+        snippet = sim.get_snippet("u(0,1)", ev.start_dt, ev.duration_dt)
+        assert np.max(np.abs(snippet.wave)) > 0.1
+
+    def test_gate_without_waveform_model_warns(self):
+        from qiskit.circuit.library import SwapGate
+        from qiskit.transpiler import InstructionProperties
+
+        target = _fractional_target()
+        target.add_instruction(
+            SwapGate(), {(0, 1): InstructionProperties(duration=320 * DT)}
+        )
+        qc = QuantumCircuit(2)
+        qc.swap(0, 1)
+        scheduled = _schedule_on(target, qc)
+
+        with pytest.warns(UserWarning, match="'swap'.*no waveform model"):
+            TargetWaveformSimulator(target).compile(scheduled)
+
+    def test_idle_gates_do_not_warn(self, backend_2q):
+        import warnings
+
+        qc = QuantumCircuit(1)
+        qc.id(0)
+        scheduled = generate_preset_pass_manager(
+            optimization_level=0, backend=backend_2q, scheduling_method="alap"
+        ).run(qc)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UserWarning)
+            TargetWaveformSimulator(backend_2q.target).compile(scheduled)
+
+
+def _hand_scheduled(qc, start_times):
+    """Attach start times directly: Qiskit's scheduler rejects circuits with boxes."""
+    qc._op_start_times = list(start_times)
+    return qc
+
+
+class TestBoxLowering:
+    """BoxOp timing and annotation overrides (hand-scheduled circuits)."""
+
+    def test_box_parallel_instructions_not_serialized(self, backend_2q):
+        qc = QuantumCircuit(2)
+        with qc.box():
+            qc.sx(0)
+            qc.sx(1)
+
+        sim = TargetWaveformSimulator(backend_2q.target).compile(
+            _hand_scheduled(qc, [0])
+        )
+
+        starts = {
+            ch: [e.start_dt for e in sim.events_by_channel[ch] if e.duration_dt > 0]
+            for ch in ("d0", "d1")
+        }
+        assert starts == {"d0": [0], "d1": [0]}
+
+    def test_single_gate_box_uses_box_duration(self, backend_2q):
+        from qiskit_waveform_sim import PulseEnvelopeAnnotation
+
+        qc = QuantumCircuit(1)
+        ann = PulseEnvelopeAnnotation(
+            shape="drag", amp=0.55, beta=0.25, sigma_ratio=0.2
+        )
+        with qc.box(duration=160, unit="dt", annotations=[ann]):
+            qc.sx(0)
+
+        sim = TargetWaveformSimulator(backend_2q.target).compile(
+            _hand_scheduled(qc, [0])
+        )
+
+        (ev,) = [e for e in sim.events_by_channel["d0"] if e.op_name == "sx"]
+        assert (ev.duration_dt, ev.sigma_dt, ev.amp, ev.beta) == (160, 32.0, 0.55, 0.25)
+        assert sim.total_duration_dt == 160
+
+    def test_box_without_duration_no_unknown_warning(self, backend_2q):
+        import warnings
+
+        qc = QuantumCircuit(1)
+        with qc.box():
+            qc.sx(0)
+        sx_dur = round(backend_2q.target["sx"][(0,)].duration / backend_2q.target.dt)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UserWarning)
+            sim = TargetWaveformSimulator(backend_2q.target).compile(
+                _hand_scheduled(qc, [0])
+            )
+
+        assert sim.total_duration_dt == sx_dur
+
+    def test_box_annotation_applies_to_two_qubit_gate(self, backend_2q):
+        from qiskit_waveform_sim import PulseEnvelopeAnnotation
+
+        qc = QuantumCircuit(2)
+        ann = PulseEnvelopeAnnotation(shape="gaussian_square", amp=0.8, risefall_dt=30)
+        with qc.box(duration=300, unit="dt", annotations=[ann]):
+            qc.cx(0, 1)
+
+        sim = TargetWaveformSimulator(backend_2q.target).compile(
+            _hand_scheduled(qc, [0])
+        )
+
+        cr = sim.events_by_channel["u(0,1)"]
+        assert [(e.amp, e.risefall_dt) for e in cr] == [(0.8, 30), (0.8, 30)]
+        assert sum(e.duration_dt for e in cr) == 300
+
+
+@pytest.mark.parametrize(
+    ("duration", "unit", "expected_dt"),
+    [
+        (100, "dt", 100),
+        (1e-6, "s", 4505),
+        (1e-3, "ms", 4505),
+        (1.0, "us", 4505),
+        (10.0, "ns", 45),
+        (10000.0, "ps", 45),
+    ],
+)
+def test_unit_conversion_for_delay_units(backend_2q, duration, unit, expected_dt):
+    assert backend_2q.target.dt == pytest.approx(0.222e-9)
+    qc = QuantumCircuit(1)
+    qc.delay(duration, 0, unit=unit)
+
+    sim = TargetWaveformSimulator(backend_2q.target).compile(_hand_scheduled(qc, [0]))
+
+    assert sim.total_duration_dt == expected_dt
+
+
+def test_sized_box_gate_fits_after_leading_delay(backend_2q):
+    """A delay inside a fixed-duration box shortens the gate, never the box."""
+    qc = QuantumCircuit(1)
+    with qc.box(duration=400, unit="dt"):
+        qc.delay(100, 0)
+        qc.x(0)
+
+    sim = TargetWaveformSimulator(backend_2q.target).compile(_hand_scheduled(qc, [0]))
+
+    (ev,) = [e for e in sim.events_by_channel["d0"] if e.op_name == "x"]
+    assert (ev.start_dt, ev.duration_dt) == (100, 300)
+    assert sim.total_duration_dt == 400
+
+
+def test_default_cr_event_metadata_unchanged(compiled_simulator):
+    """Un-annotated CR events keep the pre-refactor sigma/beta metadata."""
+    cr = compiled_simulator.events_by_channel["u(0,1)"]
+
+    assert cr and all((e.sigma_dt, e.beta) == (16.0, 0.0) for e in cr)
