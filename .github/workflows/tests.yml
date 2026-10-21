@@ -15,7 +15,7 @@ jobs:
       matrix:
         python-version: ["3.11", "3.12", "3.13"]
         # Oldest supported pin plus the newest release below the next major
-        qiskit-spec: ["==2.5.2", ">=2.5,<3"]
+        qiskit-spec: ["==2.5.0", ">=2.5,<3"]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
