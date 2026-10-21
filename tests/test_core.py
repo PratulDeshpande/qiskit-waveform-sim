@@ -596,3 +596,79 @@ class TestGateCoverage:
         with warnings.catch_warnings():
             warnings.simplefilter("error", UserWarning)
             TargetWaveformSimulator(backend_2q.target).compile(scheduled)
+
+
+def _hand_scheduled(qc, start_times):
+    """Attach start times directly: Qiskit's scheduler rejects circuits with boxes."""
+    qc._op_start_times = list(start_times)
+    return qc
+
+
+class TestBoxLowering:
+    """BoxOp timing and annotation overrides (hand-scheduled circuits)."""
+
+    def test_box_parallel_instructions_not_serialized(self, backend_2q):
+        qc = QuantumCircuit(2)
+        with qc.box():
+            qc.sx(0)
+            qc.sx(1)
+
+        sim = TargetWaveformSimulator(backend_2q.target).compile(
+            _hand_scheduled(qc, [0])
+        )
+
+        starts = {
+            ch: [e.start_dt for e in sim.events_by_channel[ch] if e.duration_dt > 0]
+            for ch in ("d0", "d1")
+        }
+        assert starts == {"d0": [0], "d1": [0]}
+
+    def test_single_gate_box_uses_box_duration(self, backend_2q):
+        from qiskit_waveform_sim import PulseEnvelopeAnnotation
+
+        qc = QuantumCircuit(1)
+        ann = PulseEnvelopeAnnotation(
+            shape="drag", amp=0.55, beta=0.25, sigma_ratio=0.2
+        )
+        with qc.box(duration=160, unit="dt", annotations=[ann]):
+            qc.sx(0)
+
+        sim = TargetWaveformSimulator(backend_2q.target).compile(
+            _hand_scheduled(qc, [0])
+        )
+
+        (ev,) = [e for e in sim.events_by_channel["d0"] if e.op_name == "sx"]
+        assert (ev.duration_dt, ev.sigma_dt, ev.amp, ev.beta) == (160, 32.0, 0.55, 0.25)
+        assert sim.total_duration_dt == 160
+
+    def test_box_without_duration_no_unknown_warning(self, backend_2q):
+        import warnings
+
+        qc = QuantumCircuit(1)
+        with qc.box():
+            qc.sx(0)
+        sx_dur = round(backend_2q.target["sx"][(0,)].duration / backend_2q.target.dt)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UserWarning)
+            sim = TargetWaveformSimulator(backend_2q.target).compile(
+                _hand_scheduled(qc, [0])
+            )
+
+        assert sim.total_duration_dt == sx_dur
+
+    def test_box_annotation_applies_to_two_qubit_gate(self, backend_2q):
+        from qiskit_waveform_sim import PulseEnvelopeAnnotation
+
+        qc = QuantumCircuit(2)
+        ann = PulseEnvelopeAnnotation(shape="gaussian_square", amp=0.8, risefall_dt=30)
+        with qc.box(duration=300, unit="dt", annotations=[ann]):
+            qc.cx(0, 1)
+
+        sim = TargetWaveformSimulator(backend_2q.target).compile(
+            _hand_scheduled(qc, [0])
+        )
+
+        cr = sim.events_by_channel["u(0,1)"]
+        assert [(e.amp, e.risefall_dt) for e in cr] == [(0.8, 30), (0.8, 30)]
+        assert sum(e.duration_dt for e in cr) == 300
