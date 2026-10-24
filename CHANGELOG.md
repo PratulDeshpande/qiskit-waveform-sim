@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-10-24
+
+### Fixed
+- **Measure frame phase**: the phase trace of a measure channel now reports the measure frame (0) instead of the drive frame.
+- **`get_snippet` channels**: malformed channel names and out-of-range qubits raise `ValueError` instead of silently using qubit 0.
+- **Annotated `rx(θ)`**: the annotation amplitude is now scaled by θ/π.
+- **Zero-width envelopes**: `AnalyticalEnvelopes.drag` and `gaussian_square` return zeros for zero-width pulses, and `drag` rejects `sigma_dt <= 0`.
+
+### Added
+- **`PulseDefaults`**: configurable, documented placeholder amplitudes.
+- **`compile(..., start_times=)`**: explicit operation start times instead of a private attribute.
+- A warning when the `Target` has no `dt`.
+- **CI**: a coverage gate (88%), tutorial notebooks executed with nbmake (added to the `test` extra), and examples smoke-run headless with a job timeout of 20 minutes.
+
+### Changed
+- **Breaking-ish**: `get_snippet` raises on invalid channels, and annotated `rx` amplitudes change (see Fixed).
+- The package is described as a control-waveform synthesizer and pulse-schedule viewer; the plot title is now "Pulse Sheet" and the README gains a "Scope and limitations" section.
+
+### Release history notes
+- Tags v0.1.0, v0.1.3 and v0.1.5 were never published to PyPI.
+- v0.1.4 and v0.1.5 point to commits that are not on `main` (`main` was rewritten at v0.1.6).
+- The v0.2.0 merge commit was recreated (`12556ad` -> `b870f05`) before tagging.
+- From 0.3.0 on, tags always point at the merge commit on `origin/main`, and `main` is never force-pushed.
+
 ## [0.2.0] - 2026-10-22
 
 ### Fixed

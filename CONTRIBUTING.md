@@ -105,12 +105,16 @@ black qiskit_waveform_sim tests examples
 
 Releases are managed by maintainers:
 
-1. Update `version` in `pyproject.toml` (the package and the docs read it from there)
-   and the `version` field of the README citation
-2. Move the `[Unreleased]` entries in `CHANGELOG.md` under the new version
-3. Create git tag: `git tag vX.Y.Z`
-4. Push tag: `git push origin vX.Y.Z`
-5. GitHub Actions builds and publishes to PyPI
+1. On a branch, bump `version` in `pyproject.toml` (the package and the docs read it
+   from there) and the `version` field of the README citation, and move the
+   `[Unreleased]` entries in `CHANGELOG.md` under the new version.
+2. Open a pull request and wait for CI to pass.
+3. Merge the pull request. Never amend or force-push `main` after merging.
+4. `git pull` so your local `main` matches `origin/main`.
+5. Tag the merge commit on `origin/main`: `git tag vX.Y.Z`.
+6. Push the tag: `git push origin vX.Y.Z`.
+7. The publish workflow builds and uploads to PyPI.
+8. Create the GitHub release from the tag (do not leave a duplicate draft release).
 
 ## Getting Help
 

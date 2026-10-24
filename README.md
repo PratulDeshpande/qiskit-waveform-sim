@@ -199,6 +199,6 @@ If you use `qiskit-waveform-sim` in your research, please cite:
   title        = {qiskit-waveform-sim: Control-waveform synthesizer and pulse-schedule viewer for Qiskit},
   year         = {2026},
   url          = {https://github.com/PratulDeshpande/qiskit-waveform-sim},
-  version      = {0.2.0}
+  version      = {0.3.0}
 }
 ```

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "qiskit-waveform-sim"
-version = "0.2.0"
+version = "0.3.0"
 description = "Control-waveform synthesizer and pulse-schedule viewer for Qiskit 2.x"
 readme = "README.md"
 license = "Apache-2.0"
