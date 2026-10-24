@@ -10,6 +10,7 @@ jobs:
   test:
     name: Test (Python ${{ matrix.python-version }}, Qiskit ${{ matrix.qiskit-spec }})
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -32,11 +33,31 @@ jobs:
           pip install "qiskit${{ matrix.qiskit-spec }}"
           pip install -e ".[test]"
 
-      - name: Run tests
+      - name: Run tests with coverage
         run: |
-          pytest -v tests/ --tb=short -q
+          pytest tests/ --cov --cov-report=term-missing --cov-report=xml -q --tb=short
 
+      - name: Run tutorial notebooks
+        env:
+          MPLBACKEND: Agg
+        run: |
+          pytest --nbmake docs/source/tutorials -q
 
+      - name: Smoke-run examples
+        shell: bash
+        env:
+          MPLBACKEND: Agg
+          # Plotly's default renderer opens a browser; json only prints
+          PLOTLY_RENDERER: json
+        run: |
+          # Run from a temp directory so any files the examples write stay out of the repo
+          repo="$PWD"
+          cd "$RUNNER_TEMP"
+          for f in "$repo"/examples/*.py; do
+            echo "::group::$f"
+            python "$f"
+            echo "::endgroup::"
+          done
 
   lint:
     name: Lint & Type Check

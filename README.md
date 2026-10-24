@@ -7,32 +7,41 @@
 [![Qiskit Ecosystem](https://qisk.it/e-7a4f4fa4)](https://qisk.it/e)
 
 
-**Classical Control Waveform Simulator & Interactive Pulse Sheet Viewer**
+**Control-waveform synthesizer and pulse-schedule viewer for Qiskit 2.x**
 
-`qiskit-waveform-sim` bridges the post-Pulse waveform gap in Qiskit by providing a native, offline, lazy-evaluated waveform simulator that works directly with Qiskit's modern `Target`, `op_start_times`, `BoxOp`, fractional gates (`RX`, `RZZ`), and the new `qiskit.circuit.annotation.Annotation` API.
+`qiskit-waveform-sim` bridges the post-Pulse waveform gap in Qiskit. It turns scheduled Qiskit 2.x circuits into sample-level I/Q control waveforms with Virtual-Z frame tracking, and draws them as an interactive pulse sheet. It does not simulate qubit dynamics. It is offline and lazy-evaluated, and works directly with Qiskit's modern `Target`, `op_start_times`, `BoxOp`, fractional gates (`RX`, `RZZ`), and the new `qiskit.circuit.annotation.Annotation` API.
 
 ## Overview
 
-With the deprecation and removal of `qiskit.pulse` in Qiskit 2.0, users need a way to inspect scheduled waveforms. This package provides an **analytical envelope generator** that synthesizes waveforms directly from instruction durations and gate names, overriding hardware calibrations with idealized standard physics (DRAG, GaussianSquare).
+With the deprecation and removal of `qiskit.pulse` in Qiskit 2.0, users need a way to inspect scheduled waveforms. This package provides an **analytical envelope generator** that synthesizes waveforms directly from instruction durations and gate names, using idealized standard pulse shapes (DRAG, GaussianSquare) instead of hardware calibrations.
 
 > [!NOTE]
-> **Analytical Envelope Philosophy**: `qiskit-waveform-sim` is designed for offline, deterministic control simulation. Rather than querying cloud-based calibration databases over the network, it synthesizes standardized, idealized physical pulse envelopes (such as DRAG with derivative leakage suppression and GaussianSquare with flat-top rise/fall pedestal corrections) derived directly from circuit gate names, parameters, and modern `Target` instruction durations.
+> **Analytical Envelope Philosophy**: `qiskit-waveform-sim` is designed for offline, deterministic control-waveform synthesis. Rather than querying cloud-based calibration databases over the network, it synthesizes standardized, idealized physical pulse envelopes (such as DRAG with derivative leakage suppression and GaussianSquare with flat-top rise/fall pedestal corrections) derived directly from circuit gate names, parameters, and modern `Target` instruction durations.
 
 | Tool | Offline? | Dynamic Circuits | Fractional Gates | Virtual-Z Tracking | Sample-Precise I/Q |
 |------|----------|------------------|------------------|--------------------|---------------------|
 | `qiskit.visualization.timeline` | Yes | No | No | No (markers only) | No |
 | `qiskit-ibm-runtime` `CircuitSchedule` | No (cloud only) | Yes (server) | No | No | No |
-| **qiskit-waveform-sim** | Yes | No (Qiskit's scheduler rejects control flow) | Yes (`RX`, `RZZ`) | Yes Exact | Yes Lazy/Windowed |
+| **qiskit-waveform-sim** | Yes | No (Qiskit's scheduler rejects control flow) | Yes (`RX`, `RZZ`) | Yes | Yes Lazy/Windowed |
 
 ## Features
 
 - **Lazy Windowed Evaluation**: `O(W)` memory for snippet extraction, independent of total circuit depth
-- **Exact Virtual-Z Frame Tracking**: Per-qubit phase accumulation propagated to drive and cross-resonance channels
+- **Virtual-Z Frame Tracking**: Per-qubit phase accumulation propagated to drive and cross-resonance channels
 - **Analytical Envelope Synthesis**: DRAG (with leakage suppression), GaussianSquare (flat-top with pedestal correction)
 - **Fractional Gate Support**: Amplitude scaling for `RX(θ)`, `RZZ(θ)` (angles wrapped to [-π, π]; over-range amplitudes are clipped with a warning)
-- **BoxOp & Annotation Native**: Custom `PulseEnvelopeAnnotation` with OpenQASM 3 & QPY serialization, applied by the simulator whenever the circuit carries start times
+- **BoxOp & Annotation Native**: Custom `PulseEnvelopeAnnotation` with OpenQASM 3 & QPY serialization, applied by `compile()` when you pass `start_times=[...]` (see the annotations tutorial)
 - **Interactive Visualization**: Plotly-based Pulse Sheet + synchronized I/Q Oscilloscope
-- **LabOne Q-style Architecture**: `OutputSimulator.get_snippet()`-style API
+- **`get_snippet()` windowed API** (inspired by LabOne Q's OutputSimulator)
+
+---
+
+## Scope and limitations
+
+- It synthesizes the waveforms a controller would play; it does **not** evolve a qubit Hamiltonian.
+- Amplitudes are uncalibrated placeholders, expressed as a fraction of DAC full scale. Override them with `PulseDefaults` or per-box `PulseEnvelopeAnnotation`.
+- Qiskit's scheduler rejects `BoxOp`, so pass `compile(qc, start_times=[...])` for boxed circuits.
+- Roadmap: an optional QuTiP-based dynamics bridge.
 
 ---
 
@@ -73,7 +82,7 @@ qc.measure([0, 1], [0, 1])
 pm = generate_preset_pass_manager(optimization_level=1, backend=backend, scheduling_method="alap")
 scheduled_qc = pm.run(qc)
 
-# 3. Compile waveform simulator
+# 3. Compile waveforms
 sim = TargetWaveformSimulator(backend.target).compile(scheduled_qc)
 
 # 4. Extract sample-precise I/Q snippets (lazy, windowed)
@@ -86,9 +95,18 @@ show_pulse_sheet(sim, interactive=True)
 show_iq_oscilloscope(sim, "d0", start_dt=0, length_dt=1000, interactive=True)
 ```
 
+### Overriding placeholder amplitudes
+
+```python
+from qiskit_waveform_sim import PulseDefaults
+
+defaults = PulseDefaults(sx_amp=0.3, x_amp=0.6)
+sim = TargetWaveformSimulator(backend.target, defaults=defaults).compile(scheduled_qc)
+```
+
 ### Custom Pulse Annotations (Unscheduled Preview)
 
-For custom pulse shapes, use `BoxOp` with `PulseEnvelopeAnnotation`. Note: Qiskit's preset scheduling passes do not yet accept circuits that contain `BoxOp`, so boxed circuits cannot be scheduled with `scheduling_method="alap"`. The annotations serialize to OpenQASM 3 and QPY today, and `TargetWaveformSimulator.compile()` applies them to any circuit that carries start times (see the annotations tutorial).
+For custom pulse shapes, use `BoxOp` with `PulseEnvelopeAnnotation`. Note: Qiskit's preset scheduling passes do not yet accept circuits that contain `BoxOp`, so boxed circuits cannot be scheduled with `scheduling_method="alap"`. The annotations serialize to OpenQASM 3 and QPY today, and `TargetWaveformSimulator.compile()` applies them when you pass `start_times=[...]` (see the annotations tutorial).
 
 ```python
 from qiskit_waveform_sim import PulseEnvelopeAnnotation, PulseAnnotationSerializer
@@ -178,9 +196,9 @@ If you use `qiskit-waveform-sim` in your research, please cite:
 ```bibtex
 @software{qiskit_waveform_sim,
   author       = {Pratul Deshpande},
-  title        = {qiskit-waveform-sim: Classical Control Waveform Simulator},
+  title        = {qiskit-waveform-sim: Control-waveform synthesizer and pulse-schedule viewer for Qiskit},
   year         = {2026},
   url          = {https://github.com/PratulDeshpande/qiskit-waveform-sim},
-  version      = {0.2.0}
+  version      = {0.3.0}
 }
 ```

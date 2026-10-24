@@ -9,7 +9,7 @@ Note: Qiskit's preset scheduling passes reject circuits that contain boxes,
 so a boxed circuit cannot go through ``generate_preset_pass_manager(...,
 scheduling_method="alap")``. The annotations are fully supported for
 OpenQASM 3 and QPY serialization; ``TargetWaveformSimulator.compile`` applies
-them whenever the circuit carries start times.
+them when you pass ``start_times=[...]``.
 """
 
 import numpy as np
