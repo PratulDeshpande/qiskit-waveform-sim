@@ -32,11 +32,29 @@ jobs:
           pip install "qiskit${{ matrix.qiskit-spec }}"
           pip install -e ".[test]"
 
-      - name: Run tests
+      - name: Run tests with coverage
         run: |
-          pytest -v tests/ --tb=short -q
+          pytest tests/ --cov --cov-report=term-missing --cov-report=xml -q --tb=short
 
+      - name: Run tutorial notebooks
+        env:
+          MPLBACKEND: Agg
+        run: |
+          pytest --nbmake docs/source/tutorials -q
 
+      - name: Smoke-run examples
+        shell: bash
+        env:
+          MPLBACKEND: Agg
+        run: |
+          # Run from a temp directory so any files the examples write stay out of the repo
+          repo="$PWD"
+          cd "$RUNNER_TEMP"
+          for f in "$repo"/examples/*.py; do
+            echo "::group::$f"
+            python "$f"
+            echo "::endgroup::"
+          done
 
   lint:
     name: Lint & Type Check

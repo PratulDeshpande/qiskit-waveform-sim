@@ -31,3 +31,13 @@ ENV/
 # Local tooling output
 graphify-out/
 .superpowers/
+
+coverage.xml
+.coverage.*
+
+# Files written by executing the hardware_export tutorial notebook
+docs/source/tutorials/*.csv
+docs/source/tutorials/*.h5
+docs/source/tutorials/*.npz
+docs/source/tutorials/pulse_templates.json
+docs/source/tutorials/waveforms_*.json

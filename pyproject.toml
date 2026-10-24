@@ -45,6 +45,7 @@ test = [
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
     "pytest-xdist>=3.8.0",
+    "nbmake>=1.5",
 ]
 dev = [
     "ruff>=0.1.0",
@@ -88,6 +89,13 @@ markers = [
     "slow: marks tests as slow",
     "integration: marks tests as integration tests",
 ]
+
+[tool.coverage.run]
+source = ["qiskit_waveform_sim"]
+
+[tool.coverage.report]
+fail_under = 88
+show_missing = true
 
 [tool.ruff]
 line-length = 100

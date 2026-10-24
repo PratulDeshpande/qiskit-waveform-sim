@@ -39,8 +39,11 @@ pre-commit install
 # Run all tests
 pytest -v tests/
 
-# Run with coverage
-pytest --cov=qiskit_waveform_sim tests/
+# Run with coverage (fails below the 88% gate set in pyproject.toml)
+pytest tests/ --cov --cov-report=term-missing
+
+# Execute the tutorial notebooks (as CI does)
+MPLBACKEND=Agg pytest --nbmake docs/source/tutorials -q
 
 # Run specific test file
 pytest -v tests/test_core.py
