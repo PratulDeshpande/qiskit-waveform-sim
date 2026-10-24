@@ -10,6 +10,7 @@ jobs:
   test:
     name: Test (Python ${{ matrix.python-version }}, Qiskit ${{ matrix.qiskit-spec }})
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -46,6 +47,8 @@ jobs:
         shell: bash
         env:
           MPLBACKEND: Agg
+          # Plotly's default renderer opens a browser; json only prints
+          PLOTLY_RENDERER: json
         run: |
           # Run from a temp directory so any files the examples write stay out of the repo
           repo="$PWD"

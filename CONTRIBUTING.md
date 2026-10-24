@@ -42,6 +42,9 @@ pytest -v tests/
 # Run with coverage (fails below the 88% gate set in pyproject.toml)
 pytest tests/ --cov --cov-report=term-missing
 
+# Run an example headless (no browser tabs): matplotlib Agg, Plotly json renderer
+MPLBACKEND=Agg PLOTLY_RENDERER=json python examples/visualization_example.py
+
 # Execute the tutorial notebooks (as CI does)
 MPLBACKEND=Agg pytest --nbmake docs/source/tutorials -q
 
