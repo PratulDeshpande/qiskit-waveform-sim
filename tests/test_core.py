@@ -803,3 +803,90 @@ class TestAnnotatedRxAndZeroWidth:
     def test_drag_nonpositive_sigma_raises(self):
         with pytest.raises(ValueError, match="sigma_dt"):
             AnalyticalEnvelopes.drag(np.arange(4.0), 4, 0.5, 0.0, 0.1)
+
+
+class TestPulseDefaults:
+    """PulseDefaults: configurable, documented placeholder amplitudes."""
+
+    @staticmethod
+    def _sim(defaults=None):
+        from qiskit_waveform_sim import PulseDefaults  # noqa: F401
+
+        target = _fractional_target()
+        qc = QuantumCircuit(2, 2)
+        qc.sx(0)
+        qc.rx(np.pi / 2, 0)
+        qc.measure(0, 0)
+        sim = TargetWaveformSimulator(target, defaults=defaults)
+        return sim.compile(_schedule_on(target, qc))
+
+    def test_default_values_unchanged(self):
+        from qiskit_waveform_sim import PulseDefaults
+
+        d = PulseDefaults()
+        assert (d.sx_amp, d.x_amp, d.cr_amp, d.measure_amp) == (
+            0.45,
+            0.90,
+            0.65,
+            0.35,
+        )
+        assert (d.drag_beta, d.drag_sigma_ratio) == (0.08, 0.25)
+        assert (d.risefall_dt, d.measure_risefall_dt, d.echo_x_max_dt) == (16, 24, 160)
+
+    def test_default_simulator_events_identical_to_before(self):
+        sim = self._sim()
+        (sx,) = [e for e in sim.events_by_channel["d0"] if e.op_name == "sx"]
+        (rx,) = [e for e in sim.events_by_channel["d0"] if e.op_name == "rx"]
+        (m,) = sim.events_by_channel["m0"]
+        assert sx.amp == pytest.approx(0.45)
+        assert abs(rx.amp) == pytest.approx(0.45)  # 0.90 * (pi/2)/pi
+        assert m.amp == pytest.approx(0.35)
+        assert m.risefall_dt == 24
+
+    def test_custom_defaults_change_event_amps(self):
+        from qiskit_waveform_sim import PulseDefaults
+
+        sim = self._sim(PulseDefaults(sx_amp=0.3, x_amp=0.6, measure_amp=0.2))
+        (sx,) = [e for e in sim.events_by_channel["d0"] if e.op_name == "sx"]
+        (rx,) = [e for e in sim.events_by_channel["d0"] if e.op_name == "rx"]
+        (m,) = sim.events_by_channel["m0"]
+        assert sx.amp == pytest.approx(0.3)
+        assert abs(rx.amp) == pytest.approx(0.3)
+        assert m.amp == pytest.approx(0.2)
+
+    def test_custom_cr_and_echo_defaults(self):
+        from qiskit_waveform_sim import PulseDefaults
+
+        target = _fractional_target()
+        qc = QuantumCircuit(2)
+        qc.rzz(np.pi / 2, 0, 1)
+        sim = TargetWaveformSimulator(target, defaults=PulseDefaults(cr_amp=0.5))
+        sim.compile(_schedule_on(target, qc))
+        amps = [abs(e.amp) for e in sim.events_by_channel["u(0,1)"]]
+        assert amps and all(a == pytest.approx(0.5) for a in amps)
+
+    @pytest.mark.parametrize(
+        "kwargs, field",
+        [
+            ({"sx_amp": 1.1}, "sx_amp"),
+            ({"x_amp": -1.5}, "x_amp"),
+            ({"cr_amp": 2.0}, "cr_amp"),
+            ({"measure_amp": 1.0001}, "measure_amp"),
+            ({"drag_sigma_ratio": 0.0}, "drag_sigma_ratio"),
+            ({"risefall_dt": -1}, "risefall_dt"),
+            ({"measure_risefall_dt": -1}, "measure_risefall_dt"),
+            ({"echo_x_max_dt": -1}, "echo_x_max_dt"),
+        ],
+    )
+    def test_validation(self, kwargs, field):
+        from qiskit_waveform_sim import PulseDefaults
+
+        with pytest.raises(ValueError, match=field):
+            PulseDefaults(**kwargs)
+
+    def test_missing_dt_warns_and_falls_back(self):
+        from qiskit.transpiler import Target
+
+        with pytest.warns(UserWarning, match="no dt"):
+            sim = TargetWaveformSimulator(Target(num_qubits=1))
+        assert sim.dt == pytest.approx(0.222e-9)

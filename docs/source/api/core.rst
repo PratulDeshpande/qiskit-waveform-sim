@@ -34,3 +34,11 @@ AnalyticalEnvelopes
    :members:
    :undoc-members:
    :show-inheritance:
+
+PulseDefaults
+-------------
+
+.. autoclass:: PulseDefaults
+   :members:
+   :undoc-members:
+   :show-inheritance:

@@ -16,6 +16,7 @@ from qiskit_waveform_sim.annotations import (
 from qiskit_waveform_sim.core import (
     AnalyticalEnvelopes,
     ChannelEvent,
+    PulseDefaults,
     TargetWaveformSimulator,
     WaveformSnippet,
 )
@@ -37,6 +38,7 @@ __all__ = [
     "TargetWaveformSimulator",
     "WaveformSnippet",
     "ChannelEvent",
+    "PulseDefaults",
     "AnalyticalEnvelopes",
     "PulseEnvelopeAnnotation",
     "PulseAnnotationSerializer",

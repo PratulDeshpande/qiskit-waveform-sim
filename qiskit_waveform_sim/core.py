@@ -1,8 +1,10 @@
 """
 Core waveform simulation engine for qiskit-waveform-sim.
 
-Provides lazy, windowed evaluation of sample-precise I/Q waveforms with exact
-Virtual-Z frame tracking, matching LabOne Q OutputSimulator architecture.
+Provides lazy, windowed evaluation of sample-precise I/Q control waveforms with
+Virtual-Z frame tracking. The ``get_snippet()`` API is inspired by LabOne Q's
+OutputSimulator. This module synthesizes control waveforms; it does not simulate
+qubit dynamics.
 """
 
 from __future__ import annotations
@@ -108,7 +110,7 @@ class AnalyticalEnvelopes:
         duration_dt : int
             Total pulse duration in dt
         amp : complex
-            Complex amplitude (magnitude = peak Rabi rate, phase = drive phase)
+            Complex amplitude as a fraction of DAC full scale (phase = drive phase)
         sigma_dt : float
             Gaussian standard deviation in dt units
         beta : float
@@ -251,9 +253,70 @@ def _full_scale(amp: float, op_name: str) -> float:
     return math.copysign(1.0, amp)
 
 
+@dataclass(frozen=True)
+class PulseDefaults:
+    """
+    Placeholder pulse parameters used when a gate carries no pulse annotation.
+
+    Amplitudes are dimensionless fractions of DAC full scale in [-1, 1]. The
+    defaults are **uncalibrated placeholders**, not Rabi rates; set them from
+    your own calibration. ``rx(theta)`` uses ``x_amp * theta / pi`` and
+    ``rzz(theta)`` scales ``cr_amp`` by ``theta / (pi / 2)``.
+
+    Parameters
+    ----------
+    sx_amp : float
+        Drive amplitude of ``sx`` (fraction of full scale).
+    x_amp : float
+        Drive amplitude of ``x`` and of the ECR echo pulse.
+    cr_amp : float
+        Cross-resonance / two-qubit pair-channel amplitude.
+    measure_amp : float
+        Readout pulse amplitude.
+    drag_beta : float
+        DRAG coefficient for single-qubit drive pulses.
+    drag_sigma_ratio : float
+        Gaussian sigma as a fraction of pulse duration (must be > 0).
+    risefall_dt : int
+        Rise/fall length in dt for pair-channel pulses.
+    measure_risefall_dt : int
+        Rise/fall length in dt for readout pulses.
+    echo_x_max_dt : int
+        Maximum duration in dt of the ECR echo X pulse.
+    """
+
+    sx_amp: float = 0.45
+    x_amp: float = 0.90
+    cr_amp: float = 0.65
+    measure_amp: float = 0.35
+    drag_beta: float = 0.08
+    drag_sigma_ratio: float = 0.25
+    risefall_dt: int = 16
+    measure_risefall_dt: int = 24
+    echo_x_max_dt: int = 160
+
+    def __post_init__(self) -> None:
+        for name in ("sx_amp", "x_amp", "cr_amp", "measure_amp"):
+            if abs(getattr(self, name)) > 1.0:
+                raise ValueError(
+                    f"{name} must satisfy abs(value) <= 1.0 (fraction of DAC full "
+                    f"scale), got {getattr(self, name)}"
+                )
+        if not self.drag_sigma_ratio > 0:
+            raise ValueError(
+                f"drag_sigma_ratio must be > 0, got {self.drag_sigma_ratio}"
+            )
+        for name in ("risefall_dt", "measure_risefall_dt", "echo_x_max_dt"):
+            if getattr(self, name) < 0:
+                raise ValueError(f"{name} must be >= 0, got {getattr(self, name)}")
+
+
 class TargetWaveformSimulator:
     """
-    LabOne Q OutputSimulator equivalent for Qiskit 2.0+ scheduled circuits.
+    Control-waveform synthesizer for Qiskit 2.x scheduled circuits.
+
+    The ``get_snippet()`` API is inspired by LabOne Q's OutputSimulator. It
+    synthesizes control waveforms and does not simulate qubit dynamics.
 
     Tracks Virtual-Z phase accumulation per qubit and synthesizes I/Q waveforms
     lazily on-demand via windowed snippet extraction.
@@ -273,7 +336,12 @@ class TargetWaveformSimulator:
     >>> print(snippet.wave.shape)  # (1000,) complex array
     """
 
-    def __init__(self, target: Target, if_freq_hz: float = 0.0):
+    def __init__(
+        self,
+        target: Target,
+        if_freq_hz: float = 0.0,
+        defaults: PulseDefaults | None = None,
+    ):
         """
         Initialize simulator with backend target.
 
@@ -284,9 +352,19 @@ class TargetWaveformSimulator:
         if_freq_hz : float, optional
             Intermediate frequency for digital upconversion (Hz).
             0.0 = baseband, non-zero = NCO modulation prior to DAC.
+        defaults : PulseDefaults, optional
+            Placeholder amplitudes and shapes for gates without a pulse
+            annotation. Defaults to ``PulseDefaults()``.
         """
         self.target = target
-        self.dt = target.dt if target.dt is not None else 0.222e-9  # Default 4.5 GSa/s
+        self.defaults = defaults if defaults is not None else PulseDefaults()
+        if target.dt is None:
+            warnings.warn(
+                "Target has no dt; assuming 0.222 ns (4.5 GSa/s)",
+                UserWarning,
+                stacklevel=2,
+            )
+        self.dt = target.dt if target.dt is not None else 0.222e-9  # 4.5 GSa/s
         self.if_freq_hz = if_freq_hz
         self.events_by_channel: dict[str, list[ChannelEvent]] = {}
         self.phase_history: dict[int, list[tuple[int, float]]] = {}
@@ -494,17 +572,17 @@ class TargetWaveformSimulator:
                 risefall_dt = override_ann.risefall_dt
             else:
                 shape = "drag"
-                beta = 0.08
-                sigma_dt = dur_dt * 0.25
-                risefall_dt = 16
+                beta = self.defaults.drag_beta
+                sigma_dt = dur_dt * self.defaults.drag_sigma_ratio
+                risefall_dt = self.defaults.risefall_dt
 
                 # Uncalibrated Analytical Fallback (since we don't parse pulse schedules)
                 if op.name == "sx":
-                    amp = 0.45
+                    amp = self.defaults.sx_amp
                 elif op.name == "x":
-                    amp = 0.90
+                    amp = self.defaults.x_amp
                 else:
-                    amp = 0.90 * (_wrapped_angle(op) / np.pi)
+                    amp = self.defaults.x_amp * (_wrapped_angle(op) / np.pi)
 
             self._append_event(
                 ChannelEvent(
@@ -536,8 +614,8 @@ class TargetWaveformSimulator:
             else:
                 # Uncalibrated Analytical Fallback for CR amplitude
                 cr_shape = "gaussian_square"
-                cr_amp = complex(_full_scale(0.65 * scale, op.name))
-                cr_risefall = 16
+                cr_amp = complex(_full_scale(self.defaults.cr_amp * scale, op.name))
+                cr_risefall = self.defaults.risefall_dt
                 cr_beta, cr_sigma_ratio = 0.0, None
 
             def pair_pulse(t0: int, dur: int, name: str, phase: float) -> None:
@@ -563,7 +641,9 @@ class TargetWaveformSimulator:
                 # Uncalibrated flat-top stand-in for a coupler-driven CZ
                 pair_pulse(start_dt, dur_dt, "cz", cr_phase)
             elif op.name == "ecr":
-                x_dur = min(160, dur_dt // 3)  # Echo X is a fixed short pulse
+                x_dur = min(
+                    self.defaults.echo_x_max_dt, dur_dt // 3
+                )  # Echo X is a fixed short pulse
                 cr_dur = (dur_dt - x_dur) // 2
                 pair_pulse(start_dt, cr_dur, f"{op.name}_cr+", cr_phase)
                 self._append_event(
@@ -575,10 +655,10 @@ class TargetWaveformSimulator:
                         qubits=(c_q,),
                         frame_phase_rad=qubit_phase[c_q],
                         shape="drag",
-                        amp=0.90 + 0.0j,
-                        beta=0.08,
-                        sigma_dt=x_dur * 0.25,
-                        risefall_dt=16,
+                        amp=complex(self.defaults.x_amp),
+                        beta=self.defaults.drag_beta,
+                        sigma_dt=x_dur * self.defaults.drag_sigma_ratio,
+                        risefall_dt=self.defaults.risefall_dt,
                     )
                 )
                 pair_pulse(
@@ -608,8 +688,8 @@ class TargetWaveformSimulator:
                         qubits=(q,),
                         frame_phase_rad=0.0,
                         shape="gaussian_square",
-                        amp=0.35 + 0.0j,
-                        risefall_dt=24,
+                        amp=complex(self.defaults.measure_amp),
+                        risefall_dt=self.defaults.measure_risefall_dt,
                     )
                 )
 
