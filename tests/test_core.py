@@ -205,9 +205,7 @@ class TestTargetWaveformSimulator:
 
     def test_get_snippet_empty_channel(self, compiled_simulator):
         """Test snippet for channel with no events."""
-        snippet = compiled_simulator.get_snippet(
-            "nonexistent", start_dt=0, length_dt=100
-        )
+        snippet = compiled_simulator.get_snippet("u(1,0)", start_dt=0, length_dt=100)
 
         assert len(snippet.wave) == 100
         assert np.all(snippet.wave == 0)
@@ -673,3 +671,91 @@ def test_default_cr_event_metadata_unchanged(compiled_simulator):
     cr = compiled_simulator.events_by_channel["u(0,1)"]
 
     assert cr and all((e.sigma_dt, e.beta) == (16.0, 0.0) for e in cr)
+
+
+class TestChannelValidation:
+    """Channel parsing and the measure tone's own frame."""
+
+    @staticmethod
+    def _compiled(backend_2q):
+        qc = QuantumCircuit(2, 1)
+        qc.rz(1.0, 0)
+        qc.sx(0)
+        qc.measure(0, 0)
+        scheduled = generate_preset_pass_manager(
+            optimization_level=0, backend=backend_2q, scheduling_method="alap"
+        ).run(qc)
+        return TargetWaveformSimulator(backend_2q.target).compile(scheduled)
+
+    def test_measure_channel_phase_is_zero(self, backend_2q):
+        sim = self._compiled(backend_2q)
+        snip = sim.get_snippet("m0")
+        assert np.all(snip.phase_rad == 0.0)
+
+    def test_drive_channel_phase_still_tracks_rz(self, backend_2q):
+        sim = self._compiled(backend_2q)
+        snip = sim.get_snippet("d0")
+        assert snip.phase_rad[-1] == pytest.approx(-1.0)
+
+    @pytest.mark.parametrize("name", ["dfoo", "zzz", "u(0 1)", "d", "u(0,1", "d-1"])
+    def test_malformed_channel_raises(self, backend_2q, name):
+        sim = self._compiled(backend_2q)
+        with pytest.raises(ValueError, match="Unknown channel"):
+            sim.get_snippet(name)
+
+    def test_out_of_range_qubit_raises(self, backend_2q):
+        sim = self._compiled(backend_2q)
+        with pytest.raises(ValueError):
+            sim.get_snippet("d99")
+        with pytest.raises(ValueError):
+            sim.get_snippet("u(0,99)")
+
+    def test_unused_wellformed_channel_is_zero(self, backend_2q):
+        sim = self._compiled(backend_2q)
+        snip = sim.get_snippet("u(1,0)")
+        assert np.all(snip.wave == 0)
+
+
+class TestAnnotatedRxAndZeroWidth:
+    def test_annotated_rx_scales_with_theta(self, backend_2q):
+        from qiskit_waveform_sim import PulseEnvelopeAnnotation
+
+        for theta, expected in [(np.pi / 4, 0.2), (np.pi / 2, 0.4), (np.pi, 0.8)]:
+            qc = QuantumCircuit(1)
+            ann = PulseEnvelopeAnnotation(shape="drag", amp=0.8, beta=0.1)
+            with qc.box(duration=160, unit="dt", annotations=[ann]):
+                qc.rx(theta, 0)
+            sim = TargetWaveformSimulator(backend_2q.target).compile(
+                _hand_scheduled(qc, [0])
+            )
+            (ev,) = [e for e in sim.events_by_channel["d0"] if e.op_name == "rx"]
+            assert abs(ev.amp) == pytest.approx(expected)
+
+    def test_annotated_sx_amp_unchanged(self, backend_2q):
+        from qiskit_waveform_sim import PulseEnvelopeAnnotation
+
+        qc = QuantumCircuit(1)
+        ann = PulseEnvelopeAnnotation(shape="drag", amp=0.8, beta=0.1)
+        with qc.box(duration=160, unit="dt", annotations=[ann]):
+            qc.sx(0)
+        sim = TargetWaveformSimulator(backend_2q.target).compile(
+            _hand_scheduled(qc, [0])
+        )
+        (ev,) = [e for e in sim.events_by_channel["d0"] if e.op_name == "sx"]
+        assert abs(ev.amp) == pytest.approx(0.8)
+
+    def test_zero_duration_envelopes_are_zero_without_warnings(self):
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            a = AnalyticalEnvelopes.drag(np.arange(0.0), 0, 0.5, 0.0, 0.1)
+            b = AnalyticalEnvelopes.drag(np.arange(1.0), 0, 0.5, 4.0, 0.1)
+            c = AnalyticalEnvelopes.gaussian_square(np.arange(1.0), 0, 0.5, 16)
+        assert a.shape == (0,)
+        assert np.all(b == 0) and b.dtype == np.complex128
+        assert np.all(c == 0) and c.dtype == np.complex128
+
+    def test_drag_nonpositive_sigma_raises(self):
+        with pytest.raises(ValueError, match="sigma_dt"):
+            AnalyticalEnvelopes.drag(np.arange(4.0), 4, 0.5, 0.0, 0.1)

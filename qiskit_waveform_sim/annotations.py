@@ -67,7 +67,9 @@ class PulseEnvelopeAnnotation(Annotation):
             Pulse shape: "drag" or "gaussian_square"
         amp : float
             Peak amplitude as a fraction of DAC full-scale, -1.0 to 1.0
-            (negative values flip the drive phase by pi)
+            (negative values flip the drive phase by pi). For ``rx(θ)`` gates,
+            ``amp`` is the π-rotation amplitude and is scaled by θ/π (the same
+            convention as the unannotated default).
         beta : float
             DRAG leakage suppression parameter (for drag shape)
         sigma_ratio : float

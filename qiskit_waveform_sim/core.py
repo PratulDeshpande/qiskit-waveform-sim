@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import bisect
 import math
+import re
 import warnings
 from dataclasses import dataclass, field
 from typing import Any
@@ -121,6 +122,10 @@ class AnalyticalEnvelopes:
             raise ValueError(
                 f"Amplitude magnitude {abs(amp):.6f} exceeds DAC full-scale (1.0)"
             )
+        if duration_dt <= 0:
+            return np.zeros_like(t_dt, dtype=np.complex128)
+        if sigma_dt <= 0:
+            raise ValueError(f"sigma_dt must be > 0, got {sigma_dt}")
         t_center = 0.5 * duration_dt
         gauss = np.exp(-0.5 * ((t_dt - t_center) / sigma_dt) ** 2)
         pedestal = np.exp(-0.5 * (t_center / sigma_dt) ** 2)
@@ -165,6 +170,8 @@ class AnalyticalEnvelopes:
             raise ValueError(
                 f"Amplitude magnitude {abs(amp):.6f} exceeds DAC full-scale (1.0)"
             )
+        if duration_dt <= 0:
+            return np.zeros_like(t_dt, dtype=np.complex128)
         risefall_dt = min(risefall_dt, duration_dt // 2)
         if risefall_dt <= 0:
             return np.full_like(t_dt, amp, dtype=np.complex128)
@@ -208,6 +215,21 @@ def _float_param(op: Any) -> float:
             f"Gate '{op.name}' has an unbound parameter ({param}). "
             "Bind all parameters with QuantumCircuit.assign_parameters() before compile()."
         ) from exc
+
+
+_CHANNEL_RE = re.compile(r"^(?:([dm])(\d+)|u\((\d+),(\d+)\))$")
+
+
+def _parse_channel(channel: str) -> tuple[str, tuple[int, ...]]:
+    """Parse ``d<q>``, ``m<q>`` or ``u(<c>,<t>)`` into ``(kind, qubit indices)``."""
+    match = _CHANNEL_RE.match(channel)
+    if match is None:
+        raise ValueError(
+            f"Unknown channel {channel!r}; expected 'd<q>', 'm<q>' or 'u(<c>,<t>)'"
+        )
+    if match.group(1) is not None:
+        return match.group(1), (int(match.group(2)),)
+    return "u", (int(match.group(3)), int(match.group(4)))
 
 
 def _wrapped_angle(op: Any) -> float:
@@ -416,6 +438,8 @@ class TargetWaveformSimulator:
             if override_ann is not None:
                 shape = override_ann.shape
                 amp = override_ann.amp
+                if op.name == "rx":
+                    amp *= _wrapped_angle(op) / np.pi
                 beta = override_ann.beta
                 sigma_dt = dur_dt * override_ann.sigma_ratio
                 risefall_dt = override_ann.risefall_dt
@@ -664,19 +688,18 @@ class TargetWaveformSimulator:
         phase_trace = np.zeros(length_dt, dtype=np.float64)
 
         # Resolve continuous phase tracking
-        if channel.startswith("d") or channel.startswith("m"):
-            try:
-                q_idx = int(channel[1:])
-            except ValueError:
-                q_idx = 0
-            phase_hist = self.phase_history.get(q_idx, [(0, 0.0)])
-        elif channel.startswith("u"):
-            try:
-                q_idx = int(channel.split(",")[-1].strip(")"))
-            except ValueError:
-                q_idx = 0
-            phase_hist = self.phase_history.get(q_idx, [(0, 0.0)])
+        kind, indices = _parse_channel(channel)
+        if self._num_qubits > 0 and any(i >= self._num_qubits for i in indices):
+            raise ValueError(
+                f"Channel {channel!r} references a qubit outside the "
+                f"{self._num_qubits}-qubit circuit"
+            )
+        if kind == "d":
+            phase_hist = self.phase_history.get(indices[0], [(0, 0.0)])
+        elif kind == "u":
+            phase_hist = self.phase_history.get(indices[1], [(0, 0.0)])
         else:
+            # The measure tone has its own frame (measure events use phase 0.0)
             phase_hist = [(0, 0.0)]
 
         # Pre-fill phase_trace with piecewise constant frame phase
