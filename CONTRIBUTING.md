@@ -43,7 +43,7 @@ pytest -v tests/
 pytest tests/ --cov --cov-report=term-missing
 
 # Run an example headless (no browser tabs): matplotlib Agg, Plotly json renderer
-MPLBACKEND=Agg PLOTLY_RENDERER=json python examples/visualization_example.py
+PYTHONUTF8=1 MPLBACKEND=Agg PLOTLY_RENDERER=json python examples/visualization_example.py
 
 # Execute the tutorial notebooks (as CI does)
 MPLBACKEND=Agg pytest --nbmake docs/source/tutorials -q
