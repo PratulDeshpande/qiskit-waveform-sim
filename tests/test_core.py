@@ -555,10 +555,62 @@ class TestGateCoverage:
             TargetWaveformSimulator(backend_2q.target).compile(scheduled)
 
 
-def _hand_scheduled(qc, start_times):
-    """Attach start times directly: Qiskit's scheduler rejects circuits with boxes."""
-    qc._op_start_times = list(start_times)
-    return qc
+class TestStartTimes:
+    """Explicit start_times= argument of compile()."""
+
+    def _boxed(self):
+        qc = QuantumCircuit(1)
+        with qc.box():
+            qc.sx(0)
+        return qc
+
+    def test_start_times_used_for_boxed_circuit(self, backend_2q):
+        sim = TargetWaveformSimulator(backend_2q.target).compile(
+            self._boxed(), start_times=[320]
+        )
+        assert [e.start_dt for e in sim.events_by_channel["d0"]][0] == 320
+
+    def test_start_times_override_scheduled(self, backend_2q):
+        qc = QuantumCircuit(1)
+        qc.sx(0)
+        scheduled = _schedule_on(backend_2q.target, qc)
+        default = TargetWaveformSimulator(backend_2q.target).compile(scheduled)
+        shifted = [t + 64 for t in scheduled.op_start_times]
+        sim = TargetWaveformSimulator(backend_2q.target).compile(
+            scheduled, start_times=shifted
+        )
+        base = [e.start_dt for e in default.events_by_channel["d0"]]
+        assert [e.start_dt for e in sim.events_by_channel["d0"]] == [
+            t + 64 for t in base
+        ]
+
+    def test_wrong_length_raises(self, backend_2q):
+        with pytest.raises(ValueError, match="start_times"):
+            TargetWaveformSimulator(backend_2q.target).compile(
+                self._boxed(), start_times=[0, 1]
+            )
+
+    def test_negative_raises(self, backend_2q):
+        with pytest.raises(ValueError, match="start_times"):
+            TargetWaveformSimulator(backend_2q.target).compile(
+                self._boxed(), start_times=[-1]
+            )
+
+    def test_float_raises(self, backend_2q):
+        with pytest.raises(ValueError, match="start_times"):
+            TargetWaveformSimulator(backend_2q.target).compile(
+                self._boxed(), start_times=[1.5]
+            )
+
+    def test_numpy_integer_accepted(self, backend_2q):
+        sim = TargetWaveformSimulator(backend_2q.target).compile(
+            self._boxed(), start_times=[np.int64(32)]
+        )
+        assert sim.events_by_channel["d0"][0].start_dt == 32
+
+    def test_unscheduled_without_start_times_mentions_parameter(self, backend_2q):
+        with pytest.raises(ValueError, match=r"start_times="):
+            TargetWaveformSimulator(backend_2q.target).compile(self._boxed())
 
 
 class TestBoxLowering:
@@ -570,9 +622,7 @@ class TestBoxLowering:
             qc.sx(0)
             qc.sx(1)
 
-        sim = TargetWaveformSimulator(backend_2q.target).compile(
-            _hand_scheduled(qc, [0])
-        )
+        sim = TargetWaveformSimulator(backend_2q.target).compile(qc, start_times=[0])
 
         starts = {
             ch: [e.start_dt for e in sim.events_by_channel[ch] if e.duration_dt > 0]
@@ -590,9 +640,7 @@ class TestBoxLowering:
         with qc.box(duration=160, unit="dt", annotations=[ann]):
             qc.sx(0)
 
-        sim = TargetWaveformSimulator(backend_2q.target).compile(
-            _hand_scheduled(qc, [0])
-        )
+        sim = TargetWaveformSimulator(backend_2q.target).compile(qc, start_times=[0])
 
         (ev,) = [e for e in sim.events_by_channel["d0"] if e.op_name == "sx"]
         assert (ev.duration_dt, ev.sigma_dt, ev.amp, ev.beta) == (160, 32.0, 0.55, 0.25)
@@ -609,7 +657,7 @@ class TestBoxLowering:
         with warnings.catch_warnings():
             warnings.simplefilter("error", UserWarning)
             sim = TargetWaveformSimulator(backend_2q.target).compile(
-                _hand_scheduled(qc, [0])
+                qc, start_times=[0]
             )
 
         assert sim.total_duration_dt == sx_dur
@@ -622,9 +670,7 @@ class TestBoxLowering:
         with qc.box(duration=300, unit="dt", annotations=[ann]):
             qc.cx(0, 1)
 
-        sim = TargetWaveformSimulator(backend_2q.target).compile(
-            _hand_scheduled(qc, [0])
-        )
+        sim = TargetWaveformSimulator(backend_2q.target).compile(qc, start_times=[0])
 
         cr = sim.events_by_channel["u(0,1)"]
         assert [(e.amp, e.risefall_dt) for e in cr] == [(0.8, 30), (0.8, 30)]
@@ -647,7 +693,7 @@ def test_unit_conversion_for_delay_units(backend_2q, duration, unit, expected_dt
     qc = QuantumCircuit(1)
     qc.delay(duration, 0, unit=unit)
 
-    sim = TargetWaveformSimulator(backend_2q.target).compile(_hand_scheduled(qc, [0]))
+    sim = TargetWaveformSimulator(backend_2q.target).compile(qc, start_times=[0])
 
     assert sim.total_duration_dt == expected_dt
 
@@ -659,7 +705,7 @@ def test_sized_box_gate_fits_after_leading_delay(backend_2q):
         qc.delay(100, 0)
         qc.x(0)
 
-    sim = TargetWaveformSimulator(backend_2q.target).compile(_hand_scheduled(qc, [0]))
+    sim = TargetWaveformSimulator(backend_2q.target).compile(qc, start_times=[0])
 
     (ev,) = [e for e in sim.events_by_channel["d0"] if e.op_name == "x"]
     assert (ev.start_dt, ev.duration_dt) == (100, 300)
@@ -726,7 +772,7 @@ class TestAnnotatedRxAndZeroWidth:
             with qc.box(duration=160, unit="dt", annotations=[ann]):
                 qc.rx(theta, 0)
             sim = TargetWaveformSimulator(backend_2q.target).compile(
-                _hand_scheduled(qc, [0])
+                qc, start_times=[0]
             )
             (ev,) = [e for e in sim.events_by_channel["d0"] if e.op_name == "rx"]
             assert abs(ev.amp) == pytest.approx(expected)
@@ -738,9 +784,7 @@ class TestAnnotatedRxAndZeroWidth:
         ann = PulseEnvelopeAnnotation(shape="drag", amp=0.8, beta=0.1)
         with qc.box(duration=160, unit="dt", annotations=[ann]):
             qc.sx(0)
-        sim = TargetWaveformSimulator(backend_2q.target).compile(
-            _hand_scheduled(qc, [0])
-        )
+        sim = TargetWaveformSimulator(backend_2q.target).compile(qc, start_times=[0])
         (ev,) = [e for e in sim.events_by_channel["d0"] if e.op_name == "sx"]
         assert abs(ev.amp) == pytest.approx(0.8)
 

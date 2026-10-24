@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import bisect
 import math
+import operator
 import re
 import warnings
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -292,25 +294,74 @@ class TargetWaveformSimulator:
         self._num_qubits: int = 0
         self._warned_ops: set[str] = set()
 
-    def compile(self, scheduled_qc: QuantumCircuit) -> TargetWaveformSimulator:
+    def compile(
+        self,
+        scheduled_qc: QuantumCircuit,
+        start_times: Sequence[int] | None = None,
+    ) -> TargetWaveformSimulator:
         """
         Compile a scheduled circuit into channel events with frame tracking.
 
         Parameters
         ----------
         scheduled_qc : QuantumCircuit
-            Circuit with op_start_times populated (via scheduling pass)
+            Circuit with op_start_times populated (via scheduling pass), or any
+            circuit when ``start_times`` is given.
+        start_times : Sequence[int], optional
+            Start time in dt of every top-level instruction, in
+            ``scheduled_qc.data`` order. Used instead of
+            ``scheduled_qc.op_start_times``. Required for circuits containing
+            ``BoxOp``, which Qiskit's scheduler rejects. Must have one
+            non-negative integer per instruction.
 
         Returns
         -------
         TargetWaveformSimulator
             Self, for method chaining
+
+        Raises
+        ------
+        ValueError
+            If the circuit is unscheduled and ``start_times`` is not given, or
+            if ``start_times`` has the wrong length or invalid entries.
+
+        Examples
+        --------
+        Hand-schedule a boxed circuit whose box starts at t = 0::
+
+            qc = QuantumCircuit(1)
+            with qc.box(duration=160, unit="dt"):
+                qc.sx(0)
+            sim = TargetWaveformSimulator(target).compile(qc, start_times=[0])
         """
-        if getattr(scheduled_qc, "op_start_times", None) is None:
-            raise ValueError(
-                "Circuit must be scheduled first. "
-                "Use generate_preset_pass_manager(..., scheduling_method='alap')."
-            )
+        if start_times is not None:
+            if len(start_times) != len(scheduled_qc.data):
+                raise ValueError(
+                    f"start_times has {len(start_times)} entries but the circuit "
+                    f"has {len(scheduled_qc.data)} instructions."
+                )
+            checked: list[int] = []
+            for i, t in enumerate(start_times):
+                try:
+                    value = operator.index(t)
+                except TypeError:
+                    raise ValueError(
+                        f"start_times[{i}] must be an integer number of dt, got {t!r}."
+                    ) from None
+                if value < 0:
+                    raise ValueError(f"start_times[{i}] must be >= 0, got {value}.")
+                checked.append(value)
+            times: Sequence[int] = checked
+        else:
+            op_times = getattr(scheduled_qc, "op_start_times", None)
+            if op_times is None:
+                raise ValueError(
+                    "Circuit must be scheduled first. "
+                    "Use generate_preset_pass_manager(..., scheduling_method='alap'). "
+                    "For circuits containing BoxOp (which Qiskit's scheduler "
+                    "rejects), pass start_times= explicitly."
+                )
+            times = op_times
 
         self._num_qubits = scheduled_qc.num_qubits
         qubit_phase: dict[int, float] = dict.fromkeys(range(self._num_qubits), 0.0)
@@ -319,9 +370,7 @@ class TargetWaveformSimulator:
         self._warned_ops = set()
         max_stop_dt = 0
 
-        for inst, start_dt in zip(
-            scheduled_qc.data, scheduled_qc.op_start_times, strict=True
-        ):
+        for inst, start_dt in zip(scheduled_qc.data, times, strict=True):
             op = inst.operation
             q_indices = tuple(scheduled_qc.find_bit(q).index for q in inst.qubits)
             max_stop_dt = max(
