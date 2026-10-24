@@ -41,7 +41,7 @@ Basic Workflow
    )
    scheduled_qc = pm.run(qc)
 
-3. **Compile the waveform simulator**
+3. **Compile the waveforms**
 
 .. code-block:: python
 
@@ -81,6 +81,18 @@ Basic Workflow
    from qiskit_waveform_sim.visualization import create_combined_view
    fig = create_combined_view(sim, "d0", start_dt=0, length_dt=1000)
    fig.show()
+
+Overriding Placeholder Amplitudes
+---------------------------------
+
+Default amplitudes are uncalibrated placeholders. Override them with ``PulseDefaults``:
+
+.. code-block:: python
+
+   from qiskit_waveform_sim import PulseDefaults
+
+   defaults = PulseDefaults(sx_amp=0.3, x_amp=0.6)
+   sim = TargetWaveformSimulator(backend.target, defaults=defaults).compile(scheduled_qc)
 
 Custom Pulse Annotations
 ------------------------

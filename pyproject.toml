@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "qiskit-waveform-sim"
 version = "0.2.0"
-description = "Zero-bloat Classical Control Waveform Simulator and Interactive Pulse Sheet Viewer"
+description = "Control-waveform synthesizer and pulse-schedule viewer for Qiskit 2.x"
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
@@ -18,7 +18,7 @@ maintainers = [
 keywords = [
     "qiskit",
     "quantum-computing",
-    "waveform-simulation",
+    "waveform-synthesis",
     "pulse-sheet",
     "quantum-control",
     "openqasm"

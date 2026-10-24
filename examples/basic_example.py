@@ -29,7 +29,7 @@ def main():
     )
     scheduled_qc = pm.run(qc)
 
-    # 3. Compile simulator
+    # 3. Compile waveforms
     sim = TargetWaveformSimulator(backend.target).compile(scheduled_qc)
 
     print(f"Circuit duration: {sim.total_duration_dt} dt")

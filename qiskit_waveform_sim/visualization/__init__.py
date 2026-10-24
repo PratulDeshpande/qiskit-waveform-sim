@@ -1,7 +1,7 @@
 """
 Interactive visualization for qiskit-waveform-sim.
 
-Provides LabOne Q-style Pulse Sheet (multi-channel schedule view) and
+Provides a Pulse Sheet (multi-channel schedule view) and
 synchronized I/Q Oscilloscope (sample-precise waveform view) using Plotly.
 """
 
@@ -160,7 +160,7 @@ def create_pulse_sheet(
             )
     fig.update_layout(
         title={
-            "text": "Qiskit Waveform Simulator - Pulse Sheet",
+            "text": "Pulse Sheet",
             "x": 0.5,
             "font": {"size": 16},
         },
