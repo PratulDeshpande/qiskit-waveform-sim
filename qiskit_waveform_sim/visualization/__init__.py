@@ -50,7 +50,7 @@ def create_pulse_sheet(
     Parameters
     ----------
     sim : TargetWaveformSimulator
-        Compiled waveform simulator
+        Compiled waveform synthesizer
     config : PulseSheetConfig, optional
         Visualization configuration
 
@@ -198,7 +198,7 @@ def create_iq_oscilloscope(
     Parameters
     ----------
     sim : TargetWaveformSimulator
-        Compiled waveform simulator
+        Compiled waveform synthesizer
     channel : str
         Channel to display (e.g., "d0", "u(0,1)", "m0")
     start_dt : int
@@ -370,7 +370,7 @@ def show_pulse_sheet(
     Parameters
     ----------
     sim : TargetWaveformSimulator
-        Compiled waveform simulator
+        Compiled waveform synthesizer
     interactive : bool
         If True, opens in browser; if False, returns figure for notebook display
     config : PulseSheetConfig, optional
@@ -402,7 +402,7 @@ def show_iq_oscilloscope(
     Parameters
     ----------
     sim : TargetWaveformSimulator
-        Compiled waveform simulator
+        Compiled waveform synthesizer
     channel : str
         Channel to display
     start_dt : int
@@ -440,7 +440,7 @@ def create_combined_view(
     Parameters
     ----------
     sim : TargetWaveformSimulator
-        Compiled waveform simulator
+        Compiled waveform synthesizer
     channel : str
         Channel for I/Q detail view
     start_dt : int

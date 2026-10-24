@@ -29,7 +29,7 @@ def plot_pulse_sheet(
     Parameters
     ----------
     sim : TargetWaveformSimulator
-        Compiled waveform simulator
+        Compiled waveform synthesizer
     ax : plt.Axes, optional
         Existing axes to plot on
     channels : List[str], optional
@@ -307,7 +307,7 @@ def plot_multi_channel_iq(
     Parameters
     ----------
     sim : TargetWaveformSimulator
-        Compiled waveform simulator
+        Compiled waveform synthesizer
     channels : List[str]
         Channels to plot
     start_dt : int
@@ -364,7 +364,7 @@ def plot_phase_tracking(
     Parameters
     ----------
     sim : TargetWaveformSimulator
-        Compiled waveform simulator
+        Compiled waveform synthesizer
     qubits : List[int], optional
         Qubits to plot (default: all)
     ax : plt.Axes, optional

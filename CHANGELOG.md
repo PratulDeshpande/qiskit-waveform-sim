@@ -5,6 +5,8 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
 ## [0.3.0] - 2026-10-24
 
 ### Fixed
@@ -20,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CI**: a coverage gate (88%), tutorial notebooks executed with nbmake (added to the `test` extra), and examples smoke-run headless with a job timeout of 20 minutes.
 
 ### Changed
-- **Breaking-ish**: `get_snippet` raises on invalid channels, and annotated `rx` amplitudes change (see Fixed).
+- **Breaking (0.x)**: `get_snippet` raises on invalid channels, and annotated `rx` amplitudes change (see Fixed).
 - The package is described as a control-waveform synthesizer and pulse-schedule viewer; the plot title is now "Pulse Sheet" and the README gains a "Scope and limitations" section.
 
 ### Release history notes
@@ -65,7 +67,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.7] - 2026-10-06
 
 ### Added
-- **TargetWaveformSimulator**: Zero-bloat waveform simulator for Qiskit 2.0+ scheduled circuits
+- **TargetWaveformSimulator**: Zero-bloat waveform synthesizer for Qiskit 2.0+ scheduled circuits
 - **Exact Virtual-Z Frame Tracking**: Per-qubit phase accumulation with cross-resonance phase-locking
 - **Lazy Windowed Evaluation**: O(W) memory snippet extraction via binary search interval indexing
 - **Analytical Envelope Synthesis**: DRAG (with leakage suppression) and GaussianSquare envelopes

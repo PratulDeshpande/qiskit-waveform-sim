@@ -221,12 +221,12 @@ def _float_param(op: Any) -> float:
         ) from exc
 
 
-_CHANNEL_RE = re.compile(r"^(?:([dm])(\d+)|u\((\d+),(\d+)\))$")
+_CHANNEL_RE = re.compile(r"(?:([dm])([0-9]+)|u\(([0-9]+),([0-9]+)\))")
 
 
 def _parse_channel(channel: str) -> tuple[str, tuple[int, ...]]:
     """Parse ``d<q>``, ``m<q>`` or ``u(<c>,<t>)`` into ``(kind, qubit indices)``."""
-    match = _CHANNEL_RE.match(channel)
+    match = _CHANNEL_RE.fullmatch(channel)
     if match is None:
         raise ValueError(
             f"Unknown channel {channel!r}; expected 'd<q>', 'm<q>' or 'u(<c>,<t>)'"
@@ -278,7 +278,7 @@ class PulseDefaults:
     drag_sigma_ratio : float
         Gaussian sigma as a fraction of pulse duration (must be > 0).
     risefall_dt : int
-        Rise/fall length in dt for pair-channel pulses.
+        Rise/fall length in dt for flat-top (gaussian_square) pulses.
     measure_risefall_dt : int
         Rise/fall length in dt for readout pulses.
     echo_x_max_dt : int

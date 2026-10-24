@@ -743,7 +743,9 @@ class TestChannelValidation:
         snip = sim.get_snippet("d0")
         assert snip.phase_rad[-1] == pytest.approx(-1.0)
 
-    @pytest.mark.parametrize("name", ["dfoo", "zzz", "u(0 1)", "d", "u(0,1", "d-1"])
+    @pytest.mark.parametrize(
+        "name", ["dfoo", "zzz", "u(0 1)", "d", "u(0,1", "d-1", "d0\n", "d\u0663"]
+    )
     def test_malformed_channel_raises(self, backend_2q, name):
         sim = self._compiled(backend_2q)
         with pytest.raises(ValueError, match="Unknown channel"):

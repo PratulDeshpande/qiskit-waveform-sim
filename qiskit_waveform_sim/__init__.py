@@ -1,10 +1,11 @@
 """
 qiskit-waveform-sim: Control-waveform synthesizer and pulse-schedule viewer for Qiskit 2.x
 
-Turns scheduled Qiskit 2.x circuits into sample-level I/Q control waveforms with Virtual-Z frame tracking, and draws them as an interactive pulse sheet. It does not simulate qubit dynamics.
-It is offline, lazy-evaluated, and works directly
-with Qiskit's modern Target, op_start_times, BoxOp, fractional gates, and the new
-qiskit.circuit.annotation.Annotation API.
+It turns scheduled Qiskit 2.x circuits into sample-level I/Q control waveforms
+with Virtual-Z frame tracking, and draws them as an interactive pulse sheet.
+It does not simulate qubit dynamics. It is offline, lazy-evaluated, and works
+directly with Qiskit's modern Target, op_start_times, BoxOp, fractional gates,
+and the new qiskit.circuit.annotation.Annotation API.
 """
 
 from importlib.metadata import PackageNotFoundError

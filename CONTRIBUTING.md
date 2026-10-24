@@ -4,7 +4,7 @@ We welcome contributions! This guide will help you get started.
 
 ## Code of Conduct
 
-This project follows our [Code of Conduct](CODE_OF_CONDUCT.md).
+This project follows our [Code of Conduct](https://github.com/PratulDeshpande/qiskit-waveform-sim/blob/main/CODE_OF_CONDUCT.md).
 By participating, you agree to uphold this code.
 
 ## How to Contribute
