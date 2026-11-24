@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Hardware-impairment profiles (phase 1, deterministic)**: `HardwareProfile` and `ChannelImpairments` describe the control chain (AWG, mixer, cable) separately from `Target`. A profile is passed as `TargetWaveformSimulator(..., hardware_profile=)` and applied to the samples `get_snippet()` returns, in a fixed order: channel delay, digital gain, DAC quantization, 1-pole bandwidth, IQ imbalance, DC offset.
+  - Per-channel overrides use exact names or case-sensitive globs (`d*`, `u(*)`); load from JSON or TOML, save as JSON; five generic illustrative presets (`ideal`, `iq_mixer_uncalibrated`, `iq_mixer_calibrated`, `direct_rf`, `noisy_lab`).
+  - `get_snippet(..., ideal=True)` returns the ideal waveform, bit-identical to a simulator without a profile. Use it for hardware export.
+  - The pulse sheet draws skewed blocks with a dotted ghost at the ideal position (`PulseSheetConfig.show_ideal_ghost`), and the I/Q oscilloscope takes `compare_ideal=True`.
+  - New accessors `channel_delay_ns()` and `channel_delay_dt()`.
+- These are waveform impairments, not a gate-fidelity prediction. Noise, jitter and `impairment_metrics()` are planned for phase 2 (issue #20).
+
+### Changed
+- `examples/hardware_export.py` and the export tutorials request `ideal=True` so exported arrays never carry simulated impairments.
+
 ## [0.3.0] - 2026-10-24
 
 ### Fixed

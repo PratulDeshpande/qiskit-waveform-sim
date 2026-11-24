@@ -22,6 +22,7 @@ from qiskit_waveform_sim.core import (
     TargetWaveformSimulator,
     WaveformSnippet,
 )
+from qiskit_waveform_sim.hardware import ChannelImpairments, HardwareProfile
 from qiskit_waveform_sim.visualization import (
     PulseSheetConfig,
     create_combined_view,
@@ -41,6 +42,8 @@ __all__ = [
     "WaveformSnippet",
     "ChannelEvent",
     "PulseDefaults",
+    "HardwareProfile",
+    "ChannelImpairments",
     "AnalyticalEnvelopes",
     "PulseEnvelopeAnnotation",
     "PulseAnnotationSerializer",

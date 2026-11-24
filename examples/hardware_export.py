@@ -112,7 +112,8 @@ def main():
 
     waveforms = {}
     for ch in sim.get_channels():
-        snip = sim.get_snippet(ch, start_dt=0, length_dt=total_dt)
+        # ideal=True: uploads must never contain simulated hardware impairments
+        snip = sim.get_snippet(ch, start_dt=0, length_dt=total_dt, ideal=True)
         waveforms[ch] = {
             "time_ns": snip.time_ns,
             "I": snip.wave.real,

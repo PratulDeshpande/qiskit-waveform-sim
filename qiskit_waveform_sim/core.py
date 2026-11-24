@@ -27,6 +27,14 @@ from qiskit_waveform_sim.annotations import (
     PulseAnnotationSerializer,
     PulseEnvelopeAnnotation,
 )
+from qiskit_waveform_sim.hardware import (
+    ChannelImpairments,
+    HardwareProfile,
+    apply_iq_imbalance,
+    lowpass,
+    lowpass_lookback,
+    quantize_dac,
+)
 
 
 @dataclass(frozen=True)
@@ -341,6 +349,7 @@ class TargetWaveformSimulator:
         target: Target,
         if_freq_hz: float = 0.0,
         defaults: PulseDefaults | None = None,
+        hardware_profile: HardwareProfile | None = None,
     ):
         """
         Initialize simulator with backend target.
@@ -355,6 +364,17 @@ class TargetWaveformSimulator:
         defaults : PulseDefaults, optional
             Placeholder amplitudes and shapes for gates without a pulse
             annotation. Defaults to ``PulseDefaults()``.
+        hardware_profile : HardwareProfile, optional
+            Control-hardware impairments (channel skew, IQ imbalance, DC offset,
+            DAC resolution, bandwidth) applied to the samples ``get_snippet()``
+            returns. ``None`` keeps the ideal waveforms. These are waveform
+            impairments, not a fidelity prediction.
+
+        Raises
+        ------
+        ValueError
+            If the profile is incompatible with the target's sample period
+            (a bandwidth at or above the Nyquist frequency).
         """
         self.target = target
         self.defaults = defaults if defaults is not None else PulseDefaults()
@@ -365,6 +385,9 @@ class TargetWaveformSimulator:
                 stacklevel=2,
             )
         self.dt = target.dt if target.dt is not None else 0.222e-9  # 4.5 GSa/s
+        if hardware_profile is not None:
+            hardware_profile.validate_for_dt(self.dt)
+        self.hardware_profile = hardware_profile
         self.if_freq_hz = if_freq_hz
         self.events_by_channel: dict[str, list[ChannelEvent]] = {}
         self.phase_history: dict[int, list[tuple[int, float]]] = {}
@@ -780,13 +803,24 @@ class TargetWaveformSimulator:
         self.events_by_channel.setdefault(event.channel, []).append(event)
 
     def get_snippet(
-        self, channel: str, start_dt: int = 0, length_dt: int | None = None
+        self,
+        channel: str,
+        start_dt: int = 0,
+        length_dt: int | None = None,
+        ideal: bool = False,
     ) -> WaveformSnippet:
         """
         Synthesize the complex I(t) + 1j*Q(t) waveform strictly within [start_dt, start_dt + length_dt].
 
         Memory complexity is O(length_dt), independent of total circuit depth.
         Uses binary search to find only overlapping events.
+
+        With a ``hardware_profile``, the channel's impairments are applied in a
+        fixed order: timing (delay, evaluated analytically, so fractional
+        delays are exact), digital gain, DAC quantization and clipping,
+        bandwidth low-pass, IQ imbalance, DC offset. A fractional delay makes a
+        pulse span ``duration + 1`` samples; the envelope is zero outside
+        ``[0, duration)``. The default window grows by the channel's delay.
 
         Parameters
         ----------
@@ -795,28 +829,52 @@ class TargetWaveformSimulator:
         start_dt : int
             Start time in dt units
         length_dt : int, optional
-            Window length in dt. Defaults to remaining circuit duration.
+            Window length in dt. Defaults to remaining circuit duration (plus
+            the channel's delay when a hardware profile is active).
+        ideal : bool, optional
+            Skip all impairments and return the ideal waveform, bit-identical to
+            a simulator without a profile. Use this for hardware export.
 
         Returns
         -------
         WaveformSnippet
-            Container with time array, complex waveform, phase trace, and overlapping events
+            Container with time array, complex waveform, phase trace, and
+            overlapping events. ``events`` holds the ideal-time
+            ``ChannelEvent`` records; with a delay they appear on the output
+            axis ``channel_delay_dt(channel)`` samples later.
         """
         if start_dt < 0:
             raise ValueError(f"start_dt must be non-negative, got {start_dt}")
         if length_dt is not None and length_dt <= 0:
             raise ValueError(f"length_dt must be positive, got {length_dt}")
 
-        if length_dt is None:
-            length_dt = max(1, self.total_duration_dt - start_dt)
-        stop_dt = start_dt + length_dt
+        impairments = self._impairments_for(channel, ideal)
+        if impairments is None:
+            return self._ideal_snippet(channel, start_dt, length_dt)
+        return self._impaired_snippet(channel, start_dt, length_dt, impairments)
 
-        t_global_dt = np.arange(start_dt, stop_dt, dtype=np.float64)
-        time_ns = t_global_dt * self.dt * 1e9
-        wave = np.zeros(length_dt, dtype=np.complex128)
-        phase_trace = np.zeros(length_dt, dtype=np.float64)
+    def _impairments_for(self, channel: str, ideal: bool) -> ChannelImpairments | None:
+        """Impairments to apply to ``channel``, or None for the untouched ideal path."""
+        if ideal or self.hardware_profile is None:
+            return None
+        impairments = self.hardware_profile.for_channel(channel)
+        return None if impairments.is_ideal else impairments
 
-        # Resolve continuous phase tracking
+    def channel_delay_ns(self, channel: str) -> float:
+        """Latency of ``channel`` in ns under the hardware profile (0.0 without one)."""
+        if self.hardware_profile is None:
+            return 0.0
+        return self.hardware_profile.for_channel(channel).delay_ns
+
+    def channel_delay_dt(self, channel: str) -> int:
+        """Whole samples the channel's output extends past the ideal one (delay rounded up)."""
+        if self.hardware_profile is None:
+            return 0
+        whole, frac = self.hardware_profile.for_channel(channel).delay_split(self.dt)
+        return whole + (1 if frac > 0.0 else 0)
+
+    def _phase_history_for(self, channel: str) -> list[tuple[int, float]]:
+        """Frame-phase history of the channel; validates the channel name and qubits."""
         kind, indices = _parse_channel(channel)
         if self._num_qubits > 0 and any(i >= self._num_qubits for i in indices):
             raise ValueError(
@@ -824,14 +882,18 @@ class TargetWaveformSimulator:
                 f"{self._num_qubits}-qubit circuit"
             )
         if kind == "d":
-            phase_hist = self.phase_history.get(indices[0], [(0, 0.0)])
-        elif kind == "u":
-            phase_hist = self.phase_history.get(indices[1], [(0, 0.0)])
-        else:
-            # The measure tone has its own frame (measure events use phase 0.0)
-            phase_hist = [(0, 0.0)]
+            return self.phase_history.get(indices[0], [(0, 0.0)])
+        if kind == "u":
+            return self.phase_history.get(indices[1], [(0, 0.0)])
+        # The measure tone has its own frame (measure events use phase 0.0)
+        return [(0, 0.0)]
 
-        # Pre-fill phase_trace with piecewise constant frame phase
+    @staticmethod
+    def _frame_phase_trace(
+        phase_hist: list[tuple[int, float]], start_dt: int, stop_dt: int
+    ) -> np.ndarray:
+        """Piecewise-constant frame phase over ``[start_dt, stop_dt)``."""
+        trace = np.zeros(stop_dt - start_dt, dtype=np.float64)
         for i in range(len(phase_hist)):
             t_change, phase_val = phase_hist[i]
             # The last frame phase holds until the end of the requested window
@@ -840,7 +902,23 @@ class TargetWaveformSimulator:
             w_start = max(start_dt, t_change)
             w_stop = min(stop_dt, t_next)
             if w_start < w_stop:
-                phase_trace[w_start - start_dt : w_stop - start_dt] = phase_val
+                trace[w_start - start_dt : w_stop - start_dt] = phase_val
+        return trace
+
+    def _ideal_snippet(
+        self, channel: str, start_dt: int, length_dt: int | None
+    ) -> WaveformSnippet:
+        """The unimpaired waveform; this path must stay bit-identical to older releases."""
+        if length_dt is None:
+            length_dt = max(1, self.total_duration_dt - start_dt)
+        stop_dt = start_dt + length_dt
+
+        t_global_dt = np.arange(start_dt, stop_dt, dtype=np.float64)
+        time_ns = t_global_dt * self.dt * 1e9
+        wave = np.zeros(length_dt, dtype=np.complex128)
+
+        phase_hist = self._phase_history_for(channel)
+        phase_trace = self._frame_phase_trace(phase_hist, start_dt, stop_dt)
 
         events = self.events_by_channel.get(channel, [])
         if not events:
@@ -913,6 +991,132 @@ class TargetWaveformSimulator:
             wave=wave,
             phase_rad=phase_trace,
             events=overlapping,
+        )
+
+    def _impaired_snippet(
+        self,
+        channel: str,
+        start_dt: int,
+        length_dt: int | None,
+        imp: ChannelImpairments,
+    ) -> WaveformSnippet:
+        """
+        Waveform with the channel's hardware impairments applied.
+
+        Output sample ``n`` is the ideal channel signal (envelope, IF carrier and
+        frame phase) evaluated at ``n - delay``. Whole-sample delays reuse the
+        exact ideal sample values; a fractional part is evaluated analytically.
+        """
+        phase_hist = self._phase_history_for(channel)
+        whole, frac = imp.delay_split(self.dt)
+        ceil_dt = whole + (1 if frac > 0.0 else 0)
+
+        if length_dt is None:
+            length_dt = max(1, self.total_duration_dt + ceil_dt - start_dt)
+        stop_dt = start_dt + length_dt
+
+        # The low-pass has memory, so synthesize from `lookback` samples earlier
+        lookback = (
+            lowpass_lookback(imp.bandwidth_mhz * 1e6, self.dt)
+            if imp.bandwidth_mhz is not None
+            else 0
+        )
+        synth_start = start_dt - lookback
+        wave = np.zeros(stop_dt - synth_start, dtype=np.complex128)
+        overlapping: list[ChannelEvent] = []
+
+        events = self.events_by_channel.get(channel, [])
+        if events:
+            starts = self._starts_by_channel.get(channel)
+            if starts is None:
+                starts = [e.start_dt for e in events]
+            max_dur = self._max_duration_by_channel.get(channel, 0)
+            # An event occupies output samples [start + whole, start + ceil + duration)
+            idx = bisect.bisect_left(starts, max(0, synth_start - ceil_dt - max_dur))
+            for ev in events[idx:]:
+                first = ev.start_dt + whole
+                if first >= stop_dt:
+                    break
+                if ev.duration_dt == 0:
+                    if start_dt <= ev.start_dt + ceil_dt < stop_dt:
+                        overlapping.append(ev)
+                    continue
+                last = ev.start_dt + ceil_dt + ev.duration_dt
+                if last > start_dt:
+                    overlapping.append(ev)
+                n0, n1 = max(first, synth_start), min(last, stop_dt)
+                if n0 >= n1:
+                    continue
+                self._add_delayed_event(wave, synth_start, ev, n0, n1, whole, frac)
+
+        if imp.amp_scale != 1.0:
+            wave = wave * imp.amp_scale
+        if imp.dac_bits is not None:
+            wave = quantize_dac(wave, imp.dac_bits)
+        if imp.bandwidth_mhz is not None:
+            wave = lowpass(wave, imp.bandwidth_mhz * 1e6, self.dt)
+        wave = wave[lookback:]
+        wave = apply_iq_imbalance(wave, imp.gain_imbalance, imp.phase_error_deg)
+        if imp.dc_i != 0.0 or imp.dc_q != 0.0:
+            wave = wave + complex(imp.dc_i, imp.dc_q)
+
+        t_global_dt = np.arange(start_dt, stop_dt, dtype=np.float64)
+        return WaveformSnippet(
+            channel=channel,
+            start_dt=start_dt,
+            dt_sec=self.dt,
+            time_ns=t_global_dt * self.dt * 1e9,
+            wave=wave,
+            # Frame changes reach the output when the delayed signal does
+            phase_rad=self._frame_phase_trace(
+                phase_hist, start_dt - ceil_dt, stop_dt - ceil_dt
+            ),
+            events=overlapping,
+        )
+
+    def _add_delayed_event(
+        self,
+        wave: np.ndarray,
+        wave_start_dt: int,
+        ev: ChannelEvent,
+        n0: int,
+        n1: int,
+        whole: int,
+        frac: float,
+    ) -> None:
+        """Add ``ev`` delayed by ``whole + frac`` samples onto output samples ``[n0, n1)``."""
+        n = np.arange(n0, n1, dtype=np.float64)
+        s_local = (n - ev.start_dt - whole) - frac  # time since the pulse start, in dt
+        # [n0, n1) ends at start + ceil + duration, so s_local < duration always
+        # holds; only the leading fractional sample (s_local < 0) is outside the pulse
+        inside = s_local >= 0.0
+        if not inside.any():
+            return
+        s = s_local[inside]
+        if ev.shape == "drag":
+            baseband = AnalyticalEnvelopes.drag(
+                s, ev.duration_dt, ev.amp, ev.sigma_dt, ev.beta
+            )
+        elif ev.shape == "gaussian_square":
+            baseband = AnalyticalEnvelopes.gaussian_square(
+                s, ev.duration_dt, ev.amp, ev.risefall_dt
+            )
+        elif ev.shape == "virtual_z":
+            return
+        else:
+            warnings.warn(
+                f"Unknown pulse shape '{ev.shape}' on channel {ev.channel}, skipping",
+                UserWarning,
+                stacklevel=3,
+            )
+            return
+        # Same carrier expression as the ideal path, at the undelayed time
+        carrier_phase = (
+            2.0 * np.pi * self.if_freq_hz * ((ev.start_dt + s) * self.dt)
+            + ev.frame_phase_rad
+        )
+        wave[n[inside].astype(np.int64) - wave_start_dt] += baseband * np.exp(
+            1j * carrier_phase
         )
 
     def get_channels(self) -> list[str]:

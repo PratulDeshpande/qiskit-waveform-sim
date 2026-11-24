@@ -23,6 +23,9 @@ def mock_simulator():
     sim.dt = 0.222e-9
     sim.total_duration_dt = 2000
     sim.get_channels.return_value = ["d0", "d1", "u(0,1)", "m0"]
+    sim.hardware_profile = None
+    sim.channel_delay_ns.return_value = 0.0
+    sim.channel_delay_dt.return_value = 0
 
     # Mock events
     from qiskit_waveform_sim.core import ChannelEvent
@@ -89,7 +92,7 @@ def mock_simulator():
     }
 
     # Mock get_snippet
-    def mock_get_snippet(channel, start_dt=0, length_dt=None):
+    def mock_get_snippet(channel, start_dt=0, length_dt=None, ideal=False):
         from qiskit_waveform_sim.core import WaveformSnippet
 
         length_dt = length_dt or 1000

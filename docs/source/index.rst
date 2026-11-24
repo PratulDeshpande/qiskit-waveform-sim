@@ -13,6 +13,7 @@ It bridges the post-Pulse waveform gap created by Qiskit 2.0-2.5's architectural
 - **Fractional Gate Support**: Amplitude scaling for :math:`R_X(\theta)`, :math:`R_{ZZ}(\theta)` (angles wrapped to :math:`[-\pi, \pi]`)
 - **BoxOp & Annotation Native**: Custom ``PulseEnvelopeAnnotation`` with OpenQASM 3 & QPY serialization, applied by ``compile()`` when you pass ``start_times=[...]`` (see the annotations tutorial)
 - **Interactive Visualization**: Plotly-based Pulse Sheet + synchronized I/Q Oscilloscope
+- **Hardware Impairments**: an optional ``HardwareProfile`` adds channel skew, IQ imbalance, DC offset, DAC resolution and bandwidth to the waveforms, as waveform impairments and not a fidelity prediction (see the Hardware Impairments API page)
 - ``get_snippet()`` windowed API (inspired by LabOne Q's OutputSimulator)
 
 .. note::
@@ -46,6 +47,7 @@ It bridges the post-Pulse waveform gap created by Qiskit 2.0-2.5's architectural
 
    api/core
    api/annotations
+   api/hardware
    api/visualization
 
 .. toctree::
