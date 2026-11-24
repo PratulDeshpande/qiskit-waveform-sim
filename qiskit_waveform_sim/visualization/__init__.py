@@ -34,6 +34,9 @@ class PulseSheetConfig:
     time_window_ns: tuple[float, float] | None = None
     show_phase_markers: bool = True
     show_annotations: bool = True
+    show_ideal_ghost: bool = (
+        True  # dotted outline at the ideal position of skewed blocks
+    )
     theme: str = "plotly_white"
 
 
@@ -75,29 +78,37 @@ def create_pulse_sheet(
         t_stop_dt = int(t_stop_ns / (sim.dt * 1e9))
     else:
         t_start_dt = 0
-        t_stop_dt = sim.total_duration_dt
+        # A skewed channel's blocks end later than the ideal schedule
+        t_stop_dt = sim.total_duration_dt + max(
+            (sim.channel_delay_dt(ch) for ch in display_channels), default=0
+        )
 
     t_start_ns = t_start_dt * sim.dt * 1e9
     t_stop_ns = t_stop_dt * sim.dt * 1e9
     n_channels = len(display_channels)
+    delay_ns = {ch: sim.channel_delay_ns(ch) for ch in display_channels}
     fig = make_subplots(
         rows=n_channels,
         cols=1,
         shared_xaxes=True,
         vertical_spacing=0.02,
-        subplot_titles=[f"<b>{ch}</b>" for ch in display_channels],
+        subplot_titles=[
+            f"<b>{ch}</b>" + (f" (+{delay_ns[ch]:.1f} ns)" if delay_ns[ch] > 0 else "")
+            for ch in display_channels
+        ],
         row_heights=[1.0 / n_channels] * n_channels,
     )
     for row_idx, channel in enumerate(display_channels, 1):
+        shift_ns = delay_ns[channel]
         for ev in sim.events_by_channel.get(channel, []):
             if ev.duration_dt == 0:
                 # Zero-duration frame changes are drawn as markers, not blocks
+                marker_ns = ev.start_dt * sim.dt * 1e9 + shift_ns
                 if (
                     ev.shape == "virtual_z"
                     and config.show_phase_markers
-                    and t_start_dt <= ev.start_dt <= t_stop_dt
+                    and t_start_ns <= marker_ns <= t_stop_ns
                 ):
-                    marker_ns = ev.start_dt * sim.dt * 1e9
                     fig.add_shape(
                         type="line",
                         x0=marker_ns,
@@ -118,19 +129,33 @@ def create_pulse_sheet(
                         font={"size": 9, "color": "red"},
                     )
                 continue
-            if ev.start_dt + ev.duration_dt <= t_start_dt or ev.start_dt >= t_stop_dt:
-                continue
-
-            ev_start_ns = ev.start_dt * sim.dt * 1e9
-            ev_stop_ns = (ev.start_dt + ev.duration_dt) * sim.dt * 1e9
-            ev_start_ns = max(ev_start_ns, t_start_ns)
-            ev_stop_ns = min(ev_stop_ns, t_stop_ns)
+            ideal_start_ns = ev.start_dt * sim.dt * 1e9
+            ideal_stop_ns = (ev.start_dt + ev.duration_dt) * sim.dt * 1e9
+            ev_start_ns = max(ideal_start_ns + shift_ns, t_start_ns)
+            ev_stop_ns = min(ideal_stop_ns + shift_ns, t_stop_ns)
             ev_duration_ns = ev_stop_ns - ev_start_ns
 
             if ev_duration_ns <= 0:
                 continue
 
             color = event_color(ev)
+            if shift_ns > 0 and config.show_ideal_ghost:
+                # Dotted outline where the block would sit without channel skew
+                ghost_start_ns = max(ideal_start_ns, t_start_ns)
+                ghost_stop_ns = min(ideal_stop_ns, t_stop_ns)
+                if ghost_stop_ns > ghost_start_ns:
+                    fig.add_shape(
+                        type="rect",
+                        x0=ghost_start_ns,
+                        x1=ghost_stop_ns,
+                        y0=0.1,
+                        y1=0.9,
+                        xref=f"x{row_idx}",
+                        yref=f"y{row_idx}",
+                        fillcolor="rgba(0,0,0,0)",
+                        line={"color": color, "width": 1, "dash": "dot"},
+                        layer="below",
+                    )
             fig.add_shape(
                 type="rect",
                 x0=ev_start_ns,
@@ -188,6 +213,7 @@ def create_iq_oscilloscope(
     start_dt: int = 0,
     length_dt: int | None = None,
     show_phase: bool = True,
+    compare_ideal: bool = False,
 ) -> go.Figure:
     """
     Create an interactive I/Q Oscilloscope for a specific channel and time window.
@@ -207,6 +233,9 @@ def create_iq_oscilloscope(
         Window length in dt units
     show_phase : bool
         Whether to show phase trace
+    compare_ideal : bool
+        With a hardware profile, overlay the ideal I and Q as dashed traces on
+        the impaired ones. Has no effect without a profile.
 
     Returns
     -------
@@ -214,6 +243,7 @@ def create_iq_oscilloscope(
         Interactive Plotly figure with I/Q waveforms
     """
     snippet = sim.get_snippet(channel, start_dt, length_dt)
+    shift_ns = sim.channel_delay_ns(channel)
 
     time_ns = snippet.time_ns
     wave = snippet.wave
@@ -262,6 +292,24 @@ def create_iq_oscilloscope(
         row=2,
         col=1,
     )
+    if compare_ideal and sim.hardware_profile is not None:
+        ideal = sim.get_snippet(channel, start_dt, len(wave), ideal=True)
+        for row, name, values, color in (
+            (1, "I (ideal)", ideal.wave.real, "#9ecae1"),
+            (2, "Q (ideal)", ideal.wave.imag, "#fdbe85"),
+        ):
+            fig.add_trace(
+                go.Scatter(
+                    x=time_ns,
+                    y=values,
+                    mode="lines",
+                    name=name,
+                    line={"color": color, "width": 1, "dash": "dash"},
+                    hovertemplate=f"Time: %{{x:.2f}} ns<br>{name}: %{{y:.4f}}<extra></extra>",
+                ),
+                row=row,
+                col=1,
+            )
     envelope = np.abs(wave)
     fig.add_trace(
         go.Scatter(
@@ -304,8 +352,9 @@ def create_iq_oscilloscope(
         )
     for ev in snippet.events:
         if ev.duration_dt > 0:
-            ev_start = ev.start_dt * sim.dt * 1e9
-            ev_stop = (ev.start_dt + ev.duration_dt) * sim.dt * 1e9
+            # The bands sit on the output pulse, which a channel delay moves
+            ev_start = ev.start_dt * sim.dt * 1e9 + shift_ns
+            ev_stop = (ev.start_dt + ev.duration_dt) * sim.dt * 1e9 + shift_ns
 
             for row in range(1, rows + 1):
                 fig.add_vrect(
@@ -395,6 +444,7 @@ def show_iq_oscilloscope(
     start_dt: int = 0,
     length_dt: int | None = None,
     interactive: bool = True,
+    compare_ideal: bool = False,
 ) -> go.Figure | None:
     """
     Display the I/Q oscilloscope for a channel.
@@ -411,13 +461,17 @@ def show_iq_oscilloscope(
         Window length in dt
     interactive : bool
         If True, opens in browser; if False, returns figure
+    compare_ideal : bool
+        With a hardware profile, overlay the ideal I and Q as dashed traces
 
     Returns
     -------
     go.Figure or None
         Returns the figure when interactive=False, otherwise None
     """
-    fig = create_iq_oscilloscope(sim, channel, start_dt, length_dt)
+    fig = create_iq_oscilloscope(
+        sim, channel, start_dt, length_dt, compare_ideal=compare_ideal
+    )
     if interactive:
         fig.show()
         return None
@@ -478,9 +532,10 @@ def create_combined_view(
     )
     for row_idx, ch in enumerate(display_channels, 1):
         events = sim.events_by_channel.get(ch, [])
+        shift_ns = sim.channel_delay_ns(ch)
         for ev in events:
-            ev_start_ns = ev.start_dt * sim.dt * 1e9
-            ev_stop_ns = (ev.start_dt + ev.duration_dt) * sim.dt * 1e9
+            ev_start_ns = ev.start_dt * sim.dt * 1e9 + shift_ns
+            ev_stop_ns = (ev.start_dt + ev.duration_dt) * sim.dt * 1e9 + shift_ns
 
             if ev_stop_ns < t_start_ns or ev_start_ns > t_stop_ns:
                 continue
